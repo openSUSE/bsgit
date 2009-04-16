@@ -3,7 +3,7 @@ BuildRequires:  python-devel
 License:        GPL v2 or later
 Group:          Productivity/Text/Utilities
 AutoReqProv:    on
-Version:        0
+Version:        @VERSION@
 Release:        0
 Summary:        Import packages from the build service into git
 Source:         bsgit-%version.tar.gz
@@ -32,5 +32,6 @@ mv %buildroot%_prefix/bin/bsgit.py %buildroot%_prefix/bin/bsgit
 %defattr(-,root,root)
 /usr/bin/bsgit
 %python_sitelib/*
+%doc COPYING
 
 %changelog
