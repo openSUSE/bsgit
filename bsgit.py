@@ -673,6 +673,10 @@ def fetch_command(args):
 	print "Branch '%s' is already up to date." % branch
     else:
 	print "Branches '%s' and '%s' difffer." % (branch, remote_branch)
+    try:
+	git(['rev-parse', '--verify', 'HEAD'])
+    except IOError:
+	git(['checkout', '-f', branch])
     return branch
 
 def dump_command(args):
