@@ -26,7 +26,7 @@ import re
 import getopt
 import subprocess
 from subprocess import PIPE
-from os import (environ, mkdir, chdir, makedirs)
+from os import (environ, mkdir, chdir, makedirs, unlink)
 from os.path import (dirname, basename)
 from errno import ENOENT
 from urllib2 import HTTPError
@@ -429,6 +429,8 @@ def expand_link(apiurl, project, package, revision, trevision):
 	    name = patch.get('name')
 	    apply_patch_to_index(apiurl, project, package, rev, name)
 	tree_sha1 = git(['write-tree'])
+
+	unlink('.osgit')
     return tree_sha1
 
 def create_tree(files):
