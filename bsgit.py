@@ -673,32 +673,8 @@ def fetch_command(args):
 	print "Branches '%s' and '%s' difffer." % (branch, remote_branch)
     return branch
 
-def clone_command(args):
-    """The clone command."""
-    try:
-	git(['rev-parse', '--is-inside-work-tree'])
-	print >> stderr, "You are already inside a git repository; aborting."
-	exit(1)
-    except IOError:
-	pass
-    if len(args) == 3:
-	directory = args[2]
-    else:
-	directory = args[1]
-    mkdir(directory)
-    chdir(directory)
-    git(['init', '--quiet'])
-
-    # Create the build service cache *inside* the repo directory
-    global bscache
-    git_dir = git(['rev-parse', '--git-dir'])
-    bscache = BuildServiceCache(git_dir + '/bscache', opt_git)
-
-    branch = fetch_command(args[:2])
-    git(['checkout', '-f', branch])
-
-def dump_bscache_command(args):
-    """The dump-bscache command."""
+def dump_command(args):
+    """The dump command."""
     for key in bscache.keys():
 	print "%s %s" % (key, bscache[key])
 
@@ -708,11 +684,6 @@ def usage(status):
 Import build service packages into git.
 
 Commands are:
-    clone <project> <package> [<directory>]
-	Create a git tree of the specified <project> and <package> in
-	<directory>.  (This command uses the fetch command).  If no directory
-	name is specified, the package name is used as the directory name.
-
     fetch, fetch <branch>, fetch <project> <package>
 	Update the remote branch tracking the specified <project> and
 	<package>.  If no project and package is specified, the default
@@ -722,8 +693,9 @@ Commands are:
 	When a branch point is hit (i.e., a revision that creates a new link
 	or updates an existing link), the target package is fetched as well.
 
-    dump-bscache
-	Dump the build service cache (for debugging).
+    update, dump
+	Update the build service cache, or dump it (for debugging).  Commands
+	that make use of the cache implicitly update the cache.
 
 Options are:
     --apiurl=<apiurl>, -A <apiurl>
@@ -741,7 +713,11 @@ Options are:
 	MD5 checksums.)
 
     -t, --traceback
-	Print a call trace in case of an error (for debugging).""" \
+	Print a call trace in case of an error (for debugging).
+
+    --verbose
+	Be verbose about which requests are being made to the build service.
+	""" \
 	% basename(sys.argv[0])
     sys.exit(status)
 
@@ -751,7 +727,7 @@ def main():
     need_osc_config = False
 
     try:
-	opts, args = getopt.gnu_getopt(sys.argv[1:], 'A:tfh', \
+	opts, args = getopt.gnu_getopt(sys.argv[1:], 'A:tfvh', \
 				       ['help', 'depth=', 'git=', 'force',
 				        'apiurl=', 'traceback', 'verbose'])
     except getopt.GetoptError, err:
@@ -774,23 +750,19 @@ def main():
 	    opt_apiurl = arg
 	elif opt in ('-t', '--traceback'):
 	    opt_traceback = True
-        elif opt == '--verbose':
+        elif opt in ('-v', '--verbose'):
 	    global opt_verbose
-	    opt_verbose = True  # The default anyway for now
+	    opt_verbose = True
 
     command = None
     if len(args) >= 1:
-	if args[0] == 'clone' and (len(args) == 3 or len(args) == 4):
-	    need_osc_config = True
-	    need_bscache = False
-	    command = clone_command
-	elif args[0] == 'fetch' and (len(args) >= 1 and len(args) <= 3):
+	if args[0] == 'fetch' and (len(args) >= 1 and len(args) <= 3):
 	    need_osc_config = True
 	    need_bscache = True
 	    command = fetch_command
-	elif args[0] == 'dump-bscache' and len(args) == 1:
+	elif args[0] == 'dump' and len(args) == 1:
 	    need_bscache = True
-	    command = dump_bscache_command
+	    command = dump_command
     if command == None:
 	usage(2)
 
