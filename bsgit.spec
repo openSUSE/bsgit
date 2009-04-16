@@ -1,6 +1,6 @@
 Name:           bsgit
 BuildRequires:  python-devel
-License:        GPL v3 or later
+License:        GPL v2 or later
 Group:          Productivity/Text/Utilities
 AutoReqProv:    on
 Version:        0
