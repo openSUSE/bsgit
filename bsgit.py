@@ -602,10 +602,8 @@ def fetch_package(apiurl, project, package, depth, need_rev=None):
 def remote_branch_name(apiurl, project, package):
     """Return the branch name we create for keeping track of the package's
     state in build service."""
-    return 'refs/remotes/' + \
-	   re.sub('^.*://', '', apiurl) + '/' + \
-	   project.replace(':', '/') + '/' + \
-	   package
+    url = osc.core.makeurl(apiurl, [project.replace(':', '/'), package])
+    return 'refs/remotes/' + re.sub('^.*://', '', url)
 
 def update_branch(branch, commit_sha1):
     """Update a branch to point to the given commit.
