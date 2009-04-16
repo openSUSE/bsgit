@@ -69,11 +69,11 @@ def git(args):
 	raise IOError(message.rstrip('\n'))
     return result.rstrip('\n')
 
-def git_tracked_branch(rev):
-    """Figure out which branch rev tracks (if any)."""
+def git_get_branches(rev):
     branch = git(['rev-parse', '--verify', '--symbolic-full-name', rev])
     branch = re.sub('^refs/heads/', '', branch)
-    return git(['config', '--get', 'branch.%s.merge' % branch])
+    remote_branch = git(['config', '--get', 'branch.%s.merge' % branch])
+    return branch, remote_branch
 
 def git_get_branch(branch):
     """Get the SHA1 hash of the head of the specified branch."""
@@ -632,21 +632,22 @@ def fetch_command(args):
     """The fetch command."""
     git(['rev-parse', '--is-inside-work-tree'])
     if len(args) <= 1:
-	branch = 'HEAD'
-	if len(args) == 1:
+	if len(args) == 0:
+	    branch = 'HEAD'
+	else:
 	    branch = args[0]
 	try:
-	    tracked_branch = git_tracked_branch(branch)
-	    rest = re.sub('^refs/remotes/', '', tracked_branch)
-	    server, _, rest = rest.partition('/')
-	    for x in ('https://' + server, 'http://' + server):
-		if x in osc.conf.config['api_host_options']:
-		    apiurl = x
+	    branch, remote_branch = git_get_branches(branch)
+	    server, project, package = \
+		re.match('^refs/remotes/([^/]+)/(.*)/(.*)',
+			 remote_branch).groups()
+	    project = project.replace('/', ':')
+	    for url in ('https://' + server, 'http://' + server):
+		if url in osc.conf.config['api_host_options']:
+		    apiurl = url
 		    break
 	    else:
 		raise EnvironmentError
-	    project, _, package = rest.rpartition('/')
-	    project = project.replace('/', ':')
 	except:
 	    raise IOError('Cannot determine the project and '
 			  'package of branch %s' % branch)
@@ -670,14 +671,45 @@ def fetch_command(args):
 	git(['branch', '--track', branch, remote_branch])
 	print "Branch '%s' created." % branch
     elif sha1 == commit_sha1:
-	print "Branch '%s' is already up to date." % branch
+	print "Already up-to-date."
     else:
-	print "Branches '%s' and '%s' difffer." % (branch, remote_branch)
+	print "Branch '%s' differs from the remote branch." % branch
     try:
 	git(['rev-parse', '--verify', 'HEAD'])
     except IOError:
 	git(['checkout', '-f', branch])
     return branch
+
+def pull_command(args):
+    """The pull command."""
+    try:
+	branch, remote_branch = git_get_branches('HEAD')
+	server, project, package = \
+	    re.match('^refs/remotes/([^/]+)/(.*)/(.*)',
+		     remote_branch).groups()
+	project = project.replace('/', ':')
+	for url in ('https://' + server, 'http://' + server):
+	    if url in osc.conf.config['api_host_options']:
+		apiurl = url
+		break
+	else:
+	    raise EnvironmentError
+    except:
+	raise IOError('Cannot determine the project and package of HEAD')
+
+    # Add and objects added in the meantime to bscache.
+    if git_get_branch(branch):
+	bscache.update(branch)
+
+    commit_sha1 = fetch_package(apiurl, project, package, opt_depth)
+
+    sha1 = git_get_branch(branch)
+    git(['rebase', remote_branch])
+    new_sha1 = git_get_branch(branch)
+    if sha1 == new_sha1:
+	print "Already up-to-date."
+    else:
+	print "Branch '%s' updated." % branch
 
 def dump_command(args):
     """The dump command."""
@@ -698,6 +730,10 @@ Commands are:
 
 	When a branch point is hit (i.e., a revision that creates a new link
 	or updates an existing link), the target package is fetched as well.
+
+    pull
+	Do a fetch of the remote branch that the current branch is tracking,
+	followed by a rebase of the current branch.
 
     update, dump
 	Update the build service cache, or dump it (for debugging).  Commands
@@ -766,6 +802,10 @@ def main():
 	    need_osc_config = True
 	    need_bscache = True
 	    command = fetch_command
+	elif args[0] == 'pull' and len(args) == 1:
+	    need_osc_config = True
+	    need_bscache = True
+	    command = pull_command
 	elif args[0] == 'dump' and len(args) == 1:
 	    need_bscache = True
 	    command = dump_command
@@ -782,7 +822,7 @@ def main():
 	    bscache = BuildServiceCache(git_dir + '/bscache', opt_git)
 
 	command(args[1:])
-    except EnvironmentError, error:
+    except (KeyboardInterrupt, EnvironmentError), error:
 	if (opt_traceback):
 	    raise
 	else:
