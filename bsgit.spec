@@ -7,7 +7,7 @@ Version:        0
 Release:        0
 Summary:        Import packages from the build service into git
 Source:         bsgit-%version.tar.gz
-Requires:       osc
+Requires:       git-core osc
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
 
 %{!?python_sitelib: %define python_sitelib %(python -c "from distutils.sysconfig import get_python_lib; print get_python_lib()")}
