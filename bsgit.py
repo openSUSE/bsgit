@@ -722,9 +722,8 @@ Commands are:
 	Do a fetch of the remote branch that the current branch is tracking,
 	followed by a rebase of the current branch.
 
-    update, dump
-	Update the build service cache, or dump it (for debugging).  Commands
-	that make use of the cache implicitly update the cache.
+    dump
+	Dump the build service cache (for debugging).
 
 Options are:
     --apiurl=<apiurl>, -A <apiurl>
