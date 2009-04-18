@@ -69,11 +69,26 @@ def git(args):
 	raise IOError(message.rstrip('\n'))
     return result.rstrip('\n')
 
-def git_get_branches(rev):
-    branch = git(['rev-parse', '--verify', '--symbolic-full-name', rev])
-    branch = re.sub('^refs/heads/', '', branch)
-    remote_branch = git(['config', '--get', 'branch.%s.merge' % branch])
-    return branch, remote_branch
+def get_rev_info(rev):
+    """Figure out which branches etc. belong to a given revision."""
+    try:
+	branch = git(['rev-parse', '--verify', '--symbolic-full-name', rev])
+	branch = re.sub('^refs/heads/', '', branch)
+	remote_branch = git(['config', '--get', 'branch.%s.merge' % branch])
+	server, project, package = \
+	    re.match('^refs/remotes/([^/]+)/(.*)/(.*)',
+		     remote_branch).groups()
+	project = project.replace('/', ':')
+	if opt_apiurl:
+	    apiurl = opt_apiurl
+	else:
+	    for url in ('https://' + server, 'http://' + server):
+		if url in osc.conf.config['api_host_options']:
+		    apiurl = url
+		    break
+	return apiurl, project, package, branch, remote_branch
+    except:
+	raise IOError('Cannot determine the project and package of ' + rev)
 
 def git_get_branch(branch):
     """Get the SHA1 hash of the head of the specified branch."""
@@ -634,21 +649,8 @@ def fetch_command(args):
 	    branch = 'HEAD'
 	else:
 	    branch = args[0]
-	try:
-	    branch, remote_branch = git_get_branches(branch)
-	    server, project, package = \
-		re.match('^refs/remotes/([^/]+)/(.*)/(.*)',
-			 remote_branch).groups()
-	    project = project.replace('/', ':')
-	    for url in ('https://' + server, 'http://' + server):
-		if url in osc.conf.config['api_host_options']:
-		    apiurl = url
-		    break
-	    else:
-		raise EnvironmentError
-	except:
-	    raise IOError('Cannot determine the project and '
-			  'package of branch %s' % branch)
+	apiurl, project, package, branch, remote_branch = \
+	    get_rev_info(branch)
     else:
 	if opt_apiurl:
 	    apiurl = opt_apiurl
@@ -657,7 +659,7 @@ def fetch_command(args):
 	project, package = args
 	branch = package
 
-    # Add and objects added in the meantime to bscache.
+    # Add any objects added to bscache in the meantime.
     if git_get_branch(branch):
 	bscache.update(branch)
 
@@ -680,24 +682,11 @@ def fetch_command(args):
 
 def pull_command(args):
     """The pull command."""
-    try:
-	branch, remote_branch = git_get_branches('HEAD')
-	server, project, package = \
-	    re.match('^refs/remotes/([^/]+)/(.*)/(.*)',
-		     remote_branch).groups()
-	project = project.replace('/', ':')
-	for url in ('https://' + server, 'http://' + server):
-	    if url in osc.conf.config['api_host_options']:
-		apiurl = url
-		break
-	else:
-	    raise EnvironmentError
-    except:
-	raise IOError('Cannot determine the project and package of HEAD')
+    apiurl, project, package, branch, remote_branch = \
+	get_rev_info('HEAD')
 
-    # Add and objects added in the meantime to bscache.
-    if git_get_branch(branch):
-	bscache.update(branch)
+    # Add any objects added to bscache in the meantime.
+    bscache.update(branch)
 
     commit_sha1 = fetch_package(apiurl, project, package, opt_depth)
 
