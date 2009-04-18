@@ -90,7 +90,7 @@ def get_rev_info(rev):
     except:
 	raise IOError('Cannot determine the project and package of ' + rev)
 
-def git_get_branch(branch):
+def git_get_sha1(branch):
     """Get the SHA1 hash of the head of the specified branch."""
     try:
 	commit_sha1 = git('rev-parse', branch)
@@ -608,7 +608,7 @@ def fetch_package(apiurl, project, package, depth, need_rev=None):
 	commit_sha1 = revision['commit_sha1']
 
     remote_branch = remote_branch_name(apiurl, project, package)
-    sha1 = git_get_branch(remote_branch)
+    sha1 = git_get_sha1(remote_branch)
     if commit_sha1 != sha1:
 	update_branch(remote_branch, commit_sha1)
 
@@ -660,13 +660,13 @@ def fetch_command(args):
 	branch = package
 
     # Add any objects added to bscache in the meantime.
-    if git_get_branch(branch):
+    if git_get_sha1(branch):
 	bscache.update(branch)
 
     commit_sha1 = fetch_package(apiurl, project, package, opt_depth)
 
     remote_branch = remote_branch_name(apiurl, project, package)
-    sha1 = git_get_branch(branch)
+    sha1 = git_get_sha1(branch)
     if sha1 == None:
 	git('branch', '--track', branch, remote_branch)
 	print "Branch '%s' created." % branch
@@ -690,9 +690,9 @@ def pull_command(args):
 
     commit_sha1 = fetch_package(apiurl, project, package, opt_depth)
 
-    sha1 = git_get_branch(branch)
+    sha1 = git_get_sha1(branch)
     git('rebase', remote_branch)
-    new_sha1 = git_get_branch(branch)
+    new_sha1 = git_get_sha1(branch)
     if sha1 == new_sha1:
 	print "Already up-to-date."
     else:
