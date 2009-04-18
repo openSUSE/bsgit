@@ -55,7 +55,7 @@ bscache = None
 
 #=======================================================================
 
-def git(args):
+def git(*args):
     """Run a simple git command (without little standard input and output)."""
     cmd = [opt_git]
     cmd.extend(args)
@@ -72,9 +72,9 @@ def git(args):
 def get_rev_info(rev):
     """Figure out which branches etc. belong to a given revision."""
     try:
-	branch = git(['rev-parse', '--verify', '--symbolic-full-name', rev])
+	branch = git('rev-parse', '--verify', '--symbolic-full-name', rev)
 	branch = re.sub('^refs/heads/', '', branch)
-	remote_branch = git(['config', '--get', 'branch.%s.merge' % branch])
+	remote_branch = git('config', '--get', 'branch.%s.merge' % branch)
 	server, project, package = \
 	    re.match('^refs/remotes/([^/]+)/(.*)/(.*)',
 		     remote_branch).groups()
@@ -93,7 +93,7 @@ def get_rev_info(rev):
 def git_get_branch(branch):
     """Get the SHA1 hash of the head of the specified branch."""
     try:
-	commit_sha1 = git(['rev-parse', branch])
+	commit_sha1 = git('rev-parse', branch)
 	return commit_sha1
     except EnvironmentError:
 	return None
@@ -438,7 +438,7 @@ def expand_link(apiurl, project, package, revision, trevision):
 	# Make git use a temporary index file.
 	environ['GIT_INDEX_FILE'] = '.osgit'
 
-	git(['read-tree', tree_sha1])
+	git('read-tree', tree_sha1)
 	# FIXME: Is there a way to garbage collect tree_sha1 right away?
 	for patch in patches_apply:
 	    name = patch.get('name')
@@ -628,7 +628,7 @@ def update_branch(branch, commit_sha1):
     for the remote branches.
     """
 
-    git_dir = git(['rev-parse', '--git-dir'])
+    git_dir = git('rev-parse', '--git-dir')
     path = git_dir + '/' + branch
     try:
 	file = open(path, "w")
@@ -643,7 +643,7 @@ def update_branch(branch, commit_sha1):
 
 def fetch_command(args):
     """The fetch command."""
-    git(['rev-parse', '--is-inside-work-tree'])
+    git('rev-parse', '--is-inside-work-tree')
     if len(args) <= 1:
 	if len(args) == 0:
 	    branch = 'HEAD'
@@ -668,16 +668,16 @@ def fetch_command(args):
     remote_branch = remote_branch_name(apiurl, project, package)
     sha1 = git_get_branch(branch)
     if sha1 == None:
-	git(['branch', '--track', branch, remote_branch])
+	git('branch', '--track', branch, remote_branch)
 	print "Branch '%s' created." % branch
     elif sha1 == commit_sha1:
 	print "Already up-to-date."
     else:
 	print "Branch '%s' differs from the remote branch." % branch
     try:
-	git(['rev-parse', '--verify', 'HEAD'])
+	git('rev-parse', '--verify', 'HEAD')
     except IOError:
-	git(['checkout', '-f', branch])
+	git('checkout', '-f', branch)
     return branch
 
 def pull_command(args):
@@ -691,7 +691,7 @@ def pull_command(args):
     commit_sha1 = fetch_package(apiurl, project, package, opt_depth)
 
     sha1 = git_get_branch(branch)
-    git(['rebase', remote_branch])
+    git('rebase', remote_branch)
     new_sha1 = git_get_branch(branch)
     if sha1 == new_sha1:
 	print "Already up-to-date."
@@ -805,7 +805,7 @@ def main():
 
 	if need_bscache:
 	    global bscache
-	    git_dir = git(['rev-parse', '--git-dir'])
+	    git_dir = git('rev-parse', '--git-dir')
 	    bscache = BuildServiceCache(git_dir + '/bscache', opt_git)
 
 	command(args[1:])
