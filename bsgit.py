@@ -98,6 +98,13 @@ def git_get_sha1(branch):
     except EnvironmentError:
 	return None
 
+def git_abbrev_rev(rev):
+    """If rev is a SHA1 hash, return an abbreviated version."""
+    if re.match('^[0-9a-f]{40}$', rev):
+	return rev[0:7]
+    else:
+	return rev
+
 def git_list_tree(commit_sha1):
     """Return the list of files in commit_sha1, with their SHA1 hashes."""
     cmd = [opt_git, 'ls-tree', commit_sha1]
@@ -110,10 +117,10 @@ def git_list_tree(commit_sha1):
 	    files.append({'name': name, 'sha1': sha1})
 	elif type == 'tree':
 	    raise IOError('Commit %s: subdirectories not supported' %
-			  commit_sha1)
+			  git_abbrev_rev(commit_sha1))
 	else:
 	    raise IOError('Commit %s: unexpected %s object' %
-			  (commit_sha1, type))
+			  (git_abbrev_rev(commit_sha1), type))
     return files
 
 #-----------------------------------------------------------------------
@@ -543,7 +550,7 @@ def fetch_revision(apiurl, project, package, revision):
     revision['commit_sha1'] = commit_sha1
     if opt_verbose:
 	print "Storing %s/%s (%s) as %s" % (project, package, revision['rev'],
-					    commit_sha1)
+					    git_abbrev_rev(commit_sha1))
     return commit_sha1
 
 def fetch_revision_rec(apiurl, project, package, revision, depth):
