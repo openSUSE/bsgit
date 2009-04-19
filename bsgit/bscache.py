@@ -63,6 +63,9 @@ class BuildServiceCache:
     def __setitem__(self, key, value):
 	self.hash[key] = value
 
+    def __delitem__(self, key):
+	del self.hash[key]
+
     def add_blob(self, blob_sha1):
 	"""Add an existing git blob (file) to the cache."""
 	md5 = self.add_new_blob(blob_sha1)

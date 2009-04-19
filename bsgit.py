@@ -112,6 +112,36 @@ def get_xml_root(apiurl, rel, query=None):
 
 #-----------------------------------------------------------------------
 
+def map_login_to_user(apiurl, login):
+    """Map a build service account name to the user's real name and email."""
+    if login == 'unknown':
+	return 'unknown <UNKNOWN>'
+    try:
+	email = bscache['email ' + login]
+	name = bscache['realname ' + login]
+    except KeyError:
+	user_info = get_user_info(apiurl, login)
+	email = user_info['email']
+	bscache['email ' + login] = email
+	bscache['login ' + email] = login
+	try:
+	    name = user_info['realname']
+	    bscache['realname' + login] = name
+	except KeyError:
+	    name = login
+    return name, email
+
+def map_email_to_login(apiurl, email):
+    """Map an email address to a build service account name."""
+    if email == 'UNKNOWN':
+	return 'unknown';
+    try:
+	login = bscache['login ' + email]
+	return login
+    except KeyError:
+	raise IOError("Cannot map email '%s' to a build service acount name. "
+		      "Please use the usermap command." % email)
+
 def get_user_info(apiurl, login):
     """Retrieve a build service user's details (email and realname).
 
@@ -466,15 +496,7 @@ def create_commit(apiurl, tree_sha1, revision):
     for parent in revision['parents']:
 	cmd.extend(['-p', parent['commit_sha1']])
 
-    user_info = get_user_info(apiurl, revision['user'])
-    if 'realname' in user_info:
-	name = user_info['realname']
-    else:
-	name = revision['user']
-    if 'email' in user_info:
-	email = user_info['email']
-    else:
-	email = 'UNKNOWN'
+    name, email = map_login_to_user(apiurl, revision['user'])
     time = revision['time']
     environ['GIT_AUTHOR_NAME'] = name
     environ['GIT_COMMITTER_NAME'] = name
@@ -698,6 +720,67 @@ def pull_command(args):
     else:
 	print "Branch '%s' updated." % branch
 
+def usermap_command(args):
+    """The usermap command."""
+    if len(args) == 0:
+	logins = []
+	for key in bscache.keys():
+	    if key[0:6] == 'email ':
+		logins.append(key[6:])
+	for login in sorted(logins):
+	    usermap_command([login])
+	return
+
+    login = args[0]
+    if len(args) == 1:
+	try:
+	    email = bscache['email ' + login]
+	    try:
+		realname = bscache['realname ' + login]
+	    except KeyError:
+		realname = None
+		pass
+	except KeyError:
+	    email = None
+	aliases = []
+	for key in bscache.keys():
+	    if key[0:6] == 'login ' and key[6:] != email and \
+	       bscache[key] == login:
+		aliases.append(key[6:])
+	if email == None:
+	    if len(aliases) == 0:
+		return
+	    else:
+		email='?'
+	if realname:
+		email = '"' + realname + ' <' + email + '>"'
+	print login + ' ' + email + ' ' + ' '.join(aliases)
+    else:
+	first_email = True
+	for email in args[1:]:
+	    realname = None
+	    match = re.match('^([^<>]+) <([^<>]+@[^<>]+)>$', email)
+	    if match:
+		realname, email = match.groups()
+	    else:
+		match = re.match('^<([^<>]+@[^<>]+)>$', email)
+		if match:
+		    email = match.groups()[0]
+		else:
+		    match = re.match('^([^<>]+@[^<>]+)$', email)
+		    if match:
+			email = match.groups()[0]
+		    else:
+			raise IOError("Cannot parse '%s'" % email)
+	    if first_email:
+		bscache['email ' + login] = email
+		if realname:
+		    bscache['realname ' + login] = realname
+		else:
+		    del bscache['realname ' + login]
+		first_email = False
+	    bscache['login ' + email] = login
+
 def dump_command(args):
     """The dump command."""
     for key in bscache.keys():
@@ -721,6 +804,13 @@ Commands are:
     pull
 	Do a fetch of the remote branch that the current branch is tracking,
 	followed by a rebase of the current branch.
+
+    usermap <login> [<email> ...]
+	Show or define which email addresses map to a build service account.
+	The first address is used for mapping from account name to email
+	address.  Any additional email addresses will map to the same build
+	service account.  Instead of an email address, a full name plus email
+	address can be given in the form "Full Name <email>".
 
     dump
 	Dump the build service cache (for debugging).
@@ -784,7 +874,7 @@ def main():
 
     command = None
     if len(args) >= 1:
-	if args[0] == 'fetch' and (len(args) >= 1 and len(args) <= 3):
+	if args[0] == 'fetch' and len(args) >= 1 and len(args) <= 3:
 	    need_osc_config = True
 	    need_bscache = True
 	    command = fetch_command
@@ -795,6 +885,9 @@ def main():
 	elif args[0] == 'dump' and len(args) == 1:
 	    need_bscache = True
 	    command = dump_command
+	elif args[0] == 'usermap':
+	    need_bscache = True
+	    command = usermap_command
     if command == None:
 	usage(2)
 
