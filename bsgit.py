@@ -213,7 +213,7 @@ def get_package_status(apiurl, project, package, rev=None):
     except KeyError:
 	status = get_new_package_status(apiurl, project, package, rev)
 	get_package_status.status[key] = status
-	if rev == None:
+	if rev == None and 'rev' in status:
 	    rev = status['rev']
 	    key = key + '/' + rev
 	    get_package_status.status[key] = status
@@ -605,6 +605,8 @@ def fetch_package(apiurl, project, package, depth, need_rev=None):
     the revision with the specified rev.
     """
     status = get_package_status(apiurl, project, package)
+    if 'rev' not in status:
+	return None
     rev = status['rev']
     if rev == 'upload':
 	# We are in the middle of an upload, or an upload has not finished:
@@ -686,6 +688,9 @@ def fetch_command(args):
 	bscache.update(branch)
 
     commit_sha1 = fetch_package(apiurl, project, package, opt_depth)
+    if commit_sha1 == None:
+	print "This package is empty."
+	return
 
     remote_branch = remote_branch_name(apiurl, project, package)
     sha1 = git_get_sha1(branch)
@@ -700,7 +705,7 @@ def fetch_command(args):
 	git('rev-parse', '--verify', 'HEAD')
     except IOError:
 	git('checkout', '-f', branch)
-    return branch
+    return
 
 def pull_command(args):
     """The pull command."""
@@ -711,6 +716,9 @@ def pull_command(args):
     bscache.update(branch)
 
     commit_sha1 = fetch_package(apiurl, project, package, opt_depth)
+    if commit_sha1 == None:
+	print "This package is empty."
+	return
 
     sha1 = git_get_sha1(branch)
     git('rebase', remote_branch)
