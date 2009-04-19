@@ -98,6 +98,24 @@ def git_get_sha1(branch):
     except EnvironmentError:
 	return None
 
+def git_list_tree(commit_sha1):
+    """Return the list of files in commit_sha1, with their SHA1 hashes."""
+    cmd = [opt_git, 'ls-tree', commit_sha1]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    files = []
+    for line in proc.stdout:
+	mode, type, sha1, name = \
+	    re.match('^(\d{6}) ([^ ]+) ([0-9a-f]{40})\t(.*)', line).groups()
+	if type == 'blob':
+	    files.append({'name': name, 'sha1': sha1})
+	elif type == 'tree':
+	    raise IOError('Commit %s: subdirectories not supported' %
+			  commit_sha1)
+	else:
+	    raise IOError('Commit %s: unexpected %s object' %
+			  (commit_sha1, type))
+    return files
+
 #-----------------------------------------------------------------------
 
 def get_xml_root(apiurl, rel, query=None):
@@ -391,24 +409,6 @@ def fetch_new_file(apiurl, project, package, rev, name, md5):
     check_proc(proc, cmd)
     return sha1
 
-def list_tree(commit_sha1, tree_sha1):
-    cmd = [opt_git, 'ls-tree', tree_sha1]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-    files = []
-    for line in proc.stdout:
-	mode, type, sha1, name = \
-	    re.match('^(\d{6}) ([^ ]+) ([0-9a-f]{40})\t(.*)', line).groups()
-	if type == 'blob':
-	    files.append({'name': name, 'sha1': sha1})
-	    # We won't need the MD5 hash ...
-	elif type == 'tree':
-	    raise IOError('Commit %s: subdirectories not supported' %
-			  commit_sha1)
-	else:
-	    raise IOError('Commit %s: unexpected %s object' %
-			  (commit_sha1, type))
-    return files
-
 def apply_patch_to_index(apiurl, project, package, rev, name):
     """Apply a patch in a source link to the git index."""
     url = osc.core.makeurl(apiurl, ['source', project, package, name],
@@ -445,8 +445,7 @@ def expand_link(apiurl, project, package, revision, trevision):
     query = 'rev=' + rev
     root = get_xml_root(apiurl, ['source', project, package, '_link'], query)
 
-    tree_sha1 = bscache['tree ' + trevision['srcmd5']]
-    old_files = list_tree(trevision['commit_sha1'], tree_sha1)
+    old_files = git_list_tree(trevision['commit_sha1'])
     patches = root.find('patches')
     if patches:
 	patches_apply = patches.findall('apply')
