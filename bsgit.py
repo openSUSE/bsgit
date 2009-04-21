@@ -481,7 +481,7 @@ def expand_link(apiurl, project, package, revision, trevision):
 	for patch in patches_apply:
 	    name = patch.get('name')
 	    apply_patch_to_index(apiurl, project, package, rev, name)
-	tree_sha1 = git(['write-tree'])
+	tree_sha1 = git('write-tree')
 
 	unlink('.osgit')
     return tree_sha1
