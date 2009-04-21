@@ -33,9 +33,9 @@ from urllib2 import HTTPError
 import osc.conf
 import osc.core
 try:
-    from xml.etree import cElementTree
+    from xml.etree import cElementTree as ET
 except ImportError:
-    import cElementTree
+    import cElementTree as ET
 from bsgit.bscache import BuildServiceCache, compute_srcmd5, check_proc
 
 import pdb  # Python Debugger
@@ -107,6 +107,7 @@ def git_abbrev_rev(rev):
 
 def git_list_tree(commit_sha1):
     """Return the list of files in commit_sha1, with their SHA1 hashes."""
+    # FIXME: Use NUL-terminated format (-z) for newlines in filenames.
     cmd = [opt_git, 'ls-tree', commit_sha1]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     files = []
@@ -133,7 +134,7 @@ def get_xml_root(apiurl, rel, query=None):
     if opt_verbose:
 	print "-- GET " + url
     file = osc.core.http_GET(url)
-    return cElementTree.parse(file).getroot()
+    return ET.parse(file).getroot()
 
 #-----------------------------------------------------------------------
 
@@ -488,6 +489,7 @@ def expand_link(apiurl, project, package, revision, trevision):
 
 def create_tree(files):
     """Create a git tree object from a list of files."""
+    # FIXME: Use NUL-terminated format (-z) for newlines in filenames.
     cmd = [opt_git, 'mktree']
     proc = subprocess.Popen(cmd, stdin=PIPE, stdout=PIPE)
     for file in sorted(files, cmp=lambda a,b: cmp(a['name'], b['name'])):
