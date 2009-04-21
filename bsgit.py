@@ -140,20 +140,22 @@ def get_xml_root(apiurl, rel, query=None):
 def map_login_to_user(apiurl, login):
     """Map a build service account name to the user's real name and email."""
     if login == 'unknown':
-	return 'unknown <UNKNOWN>'
-    try:
-	email = bscache['email ' + login]
-	name = bscache['realname ' + login]
-    except KeyError:
-	user_info = get_user_info(apiurl, login)
-	email = user_info['email']
-	bscache['email ' + login] = email
-	bscache['login ' + email] = login
+	name = 'unknown'
+	email = 'UNKNOWN'
+    else:
 	try:
-	    name = user_info['realname']
-	    bscache['realname' + login] = name
+	    email = bscache['email ' + login]
+	    name = bscache['realname ' + login]
 	except KeyError:
-	    name = login
+	    user_info = get_user_info(apiurl, login)
+	    email = user_info['email']
+	    bscache['email ' + login] = email
+	    bscache['login ' + email] = login
+	    try:
+		name = user_info['realname']
+		bscache['realname' + login] = name
+	    except KeyError:
+		name = login
     return name, email
 
 def map_email_to_login(apiurl, email):
