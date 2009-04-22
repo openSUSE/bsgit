@@ -218,7 +218,7 @@ def get_new_user_info(apiurl, login):
 
 #-----------------------------------------------------------------------
 
-def get_package_status(apiurl, project, package, rev=None):
+def get_package_status(apiurl, project, package, rev='latest'):
     """Retrieve the status of a package (optionally, of a given revision).
 
     https://api.opensuse.org/source/PROJECT/PACKAGE
@@ -232,15 +232,21 @@ def get_package_status(apiurl, project, package, rev=None):
      'files': [{'name': ..., 'md5': ...}, ...]}
     ...
     """
+
+    # Note that when no revision is specified, the build service may show
+    # rev="upload" as the latest revision while an upload is in progress (or
+    # after a client has failed during an upload).  Specifying rev="latest"
+    # avoids this and returns the latest actual revision.
+
     server = re.sub('.*://', '', apiurl)
-    if rev != None:
+    if rev != 'latest':
 	key = server + '/' + project + '/' + package + '/' + rev
 	try:
 	    return get_package_status.status[key]
 	except KeyError:
 	    pass
     status = get_new_package_status(apiurl, project, package, rev)
-    if rev == None and 'rev' in status:
+    if 'rev' in status:
 	rev = status['rev']
 	key = server + '/' + project + '/' + package + '/' + rev
 	get_package_status.status[key] = status
@@ -267,22 +273,6 @@ def get_new_package_status(apiurl, project, package, rev):
 	file['md5'] = node.get('md5')
 	files.append(file)
     status['files'] = files
-    return status
-
-def get_latest_package_status(apiurl, project, package):
-    """Get the package status of the last actual revision, ignoring uploads."""
-    status = get_package_status(apiurl, project, package)
-    try:
-	rev = status['rev']
-    except KeyError:
-	return None
-    if rev == 'upload':
-	# We are in the middle of an upload, or an upload has not finished:
-	# get the latest revision from the package history and ignore the
-	# uploaded files.
-	revision = get_revision(apiurl, project, package)
-	rev = revision['rev']
-	status = get_package_status(apiurl, project, package, rev)
     return status
 
 #-----------------------------------------------------------------------
@@ -629,7 +619,7 @@ def fetch_package(apiurl, project, package, depth=sys.maxint, need_rev=None):
     """Fetch a package, up to the defined maximum depth, but at least including
     the revision with the specified rev.
     """
-    status = get_latest_package_status(apiurl, project, package)
+    status = get_package_status(apiurl, project, package)
     try:
 	rev = status['rev']
     except KeyError:
