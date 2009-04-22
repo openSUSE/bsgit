@@ -920,21 +920,35 @@ def main():
 	usage(2)
 
     try:
-	if need_osc_config:
-	    osc.conf.get_config()
+	try:
+	    if need_osc_config:
+		osc.conf.get_config()
 
-	if need_bscache:
-	    global bscache
-	    git_dir = git('rev-parse', '--git-dir')
-	    bscache = BuildServiceCache(git_dir + '/bscache', opt_git)
+	    if need_bscache:
+		global bscache
+		git_dir = git('rev-parse', '--git-dir')
+		bscache = BuildServiceCache(git_dir + '/bscache', opt_git)
 
-	command(args[1:])
-    except (KeyboardInterrupt, EnvironmentError), error:
-	if (opt_traceback):
+	    command(args[1:])
+	except (KeyboardInterrupt, EnvironmentError), error:
+	    if opt_traceback:
+		import traceback
+		traceback.print_exc(file=stderr)
+	    else:
+		print >>stderr, error
 	    raise
-	else:
+    except HTTPError, error:
+	if hasattr(error, 'osc_msg'):
+	    print >>stderr, error.osc_msg
+	body = error.read()
+	match = re.search('<summary>(.*)</summary>', body)
+	if match:
+	    print >>stderr, match.groups()[0]
+	exit(1)
+    except (KeyboardInterrupt, EnvironmentError), error:
+	if not opt_traceback:
 	    print error
-	    exit(1)
+	exit(1)
 
 if __name__ == "__main__":
     main()
