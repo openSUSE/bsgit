@@ -269,6 +269,22 @@ def get_new_package_status(apiurl, project, package, rev):
     status['files'] = files
     return status
 
+def get_latest_package_status(apiurl, project, package):
+    """Get the package status of the last actual revision, ignoring uploads."""
+    status = get_package_status(apiurl, project, package)
+    try:
+	rev = status['rev']
+    except KeyError:
+	return None
+    if rev == 'upload':
+	# We are in the middle of an upload, or an upload has not finished:
+	# get the latest revision from the package history and ignore the
+	# uploaded files.
+	revision = get_revision(apiurl, project, package)
+	rev = revision['rev']
+	status = get_package_status(apiurl, project, package, rev)
+    return status
+
 #-----------------------------------------------------------------------
 
 def get_revision(apiurl, project, package, rev=None):
@@ -609,20 +625,15 @@ def mark_as_needed_rec(rev, revision):
 	return True
     return False
 
-def fetch_package(apiurl, project, package, depth, need_rev=None):
+def fetch_package(apiurl, project, package, depth=sys.maxint, need_rev=None):
     """Fetch a package, up to the defined maximum depth, but at least including
     the revision with the specified rev.
     """
-    status = get_package_status(apiurl, project, package)
-    if 'rev' not in status:
+    status = get_latest_package_status(apiurl, project, package)
+    try:
+	rev = status['rev']
+    except KeyError:
 	return None
-    rev = status['rev']
-    if rev == 'upload':
-	# We are in the middle of an upload, or an upload has not finished:
-	# get the latest revision from the package history and ignore the
-	# uploaded files.
-	revision = get_revision(apiurl, project, package)
-	rev = revision['rev']
 
     if opt_force:
 	commit_sha1 = None
