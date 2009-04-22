@@ -794,7 +794,7 @@ def usermap_command(args):
 		bscache['email ' + login] = email
 		if realname:
 		    bscache['realname ' + login] = realname
-		else:
+		elif bscache.has_key('realname ' + login):
 		    del bscache['realname ' + login]
 		first_email = False
 	    bscache['login ' + email] = login
