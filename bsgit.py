@@ -233,19 +233,18 @@ def get_package_status(apiurl, project, package, rev=None):
     ...
     """
     server = re.sub('.*://', '', apiurl)
-    key = server + '/' + project + '/' + package
     if rev != None:
-	key = key + '/' + rev
-    try:
-	return get_package_status.status[key]
-    except KeyError:
-	status = get_new_package_status(apiurl, project, package, rev)
+	key = server + '/' + project + '/' + package + '/' + rev
+	try:
+	    return get_package_status.status[key]
+	except KeyError:
+	    pass
+    status = get_new_package_status(apiurl, project, package, rev)
+    if rev == None and 'rev' in status:
+	rev = status['rev']
+	key = server + '/' + project + '/' + package + '/' + rev
 	get_package_status.status[key] = status
-	if rev == None and 'rev' in status:
-	    rev = status['rev']
-	    key = key + '/' + rev
-	    get_package_status.status[key] = status
-	return status
+    return status
 get_package_status.status = {}
 
 def get_new_package_status(apiurl, project, package, rev):
