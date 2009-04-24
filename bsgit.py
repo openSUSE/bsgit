@@ -233,10 +233,16 @@ def get_package_status(apiurl, project, package, rev='latest'):
     ...
     """
 
-    # Note that when no revision is specified, the build service may show
-    # rev="upload" as the latest revision while an upload is in progress (or
-    # after a client has failed during an upload).  Specifying rev="latest"
-    # avoids this and returns the latest actual revision.
+    # NOTES
+    #
+    # * When no revision is specified, the build service may show
+    #   rev="upload" as the latest revision while an upload is in progress
+    #   or after a client has failed during an upload).  Specifying
+    #   rev="latest" avoids this and returns the latest actual revision.
+    #
+    # * The mtime attribute is the mtime of the physical file on the server;
+    #   it is not part of the per-revision metadata.  The best we can do is
+    #   to ignore this attribute.
 
     server = re.sub('.*://', '', apiurl)
     if rev != 'latest':
