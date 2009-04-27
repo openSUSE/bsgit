@@ -228,7 +228,7 @@ def get_package_status(apiurl, project, package, rev='latest'):
       </directory>
 
     Returns:
-    {'rev': ..., 'project': ..., 'package': ..., 'srcmd5': ..., ...,
+    {'rev': ..., 'srcmd5': ..., ...,
      'files': [{'name': ..., 'md5': ...}, ...]}
     ...
     """
@@ -259,8 +259,8 @@ def get_package_status(apiurl, project, package, rev='latest'):
     return status
 get_package_status.status = {}
 
-def parse_xml_directory(project, package, root):
-    status = {'project' : project, 'package' : package}
+def parse_xml_directory(root):
+    status = {}
     for name in ('rev', 'srcmd5', 'tproject', 'tpackage'):
 	try:
 	    value = root.get(name)
@@ -282,7 +282,7 @@ def get_new_package_status(apiurl, project, package, rev):
     if rev != None:
 	query = 'rev=' + rev
     root = get_xml_root(apiurl, ['source', project, package], query)
-    status = parse_xml_directory(project, package, root)
+    status = parse_xml_directory(root)
     return status
 
 #-----------------------------------------------------------------------
