@@ -5,7 +5,7 @@ Group:          Productivity/Text/Utilities
 AutoReqProv:    on
 Version:        @VERSION@
 Release:        0
-Summary:        Import packages from the build service into git
+Summary:        A simple git frontend for the openSUSE build service
 Source:         bsgit-%version.tar.gz
 Url:            http://git.opensuse.org/people/agruen/bsgit.git
 Requires:       git-core osc
@@ -14,9 +14,13 @@ BuildRoot:      %{_tmppath}/%{name}-%{version}-build
 %{!?python_sitelib: %define python_sitelib %(python -c "from distutils.sysconfig import get_python_lib; print get_python_lib()")}
 
 %description
-This is a first version of a git frontend for the build service.  Right now,
-all it does is import packages from the build service into branches in a git
-repository.  Changes in git cannot be exported back to the build service so far.
+Supports importing of packages from an openSUSE build service instance into
+a git repository, and exporting of simple changes back into the build
+service.
+
+The import capabilities for source links (i.e., linked packages)
+currently is limited due to limitations in the current backend code.
+Exporting source links is not implemented, yet.
 
 %prep
 %setup

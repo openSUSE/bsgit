@@ -98,6 +98,39 @@ def git_get_sha1(branch):
     except EnvironmentError:
 	return None
 
+def git_get_commit(sha1):
+    info = {}
+    cmd = [opt_git, 'cat-file', 'commit', sha1]
+    proc = subprocess.Popen(cmd, stdout=PIPE)
+    while True:
+	line = proc.stdout.readline()
+	if line == '':
+	    break
+	elif line == '\n':
+	    info['message'] = proc.stdout.read().rstrip('\n')
+	    break
+	else:
+	    token, value = line.rstrip('\n').split(' ', 1)
+	    if token == 'tree':
+		if token in info:
+		    raise IOError("Commit %s: parse error in headers" % sha1)
+		info[token] = value
+	    elif token == 'parent':
+		if 'parents' not in info:
+		    info['parents'] = []
+	        info['parents'].append(value)
+	    elif token in ('author', 'committer'):
+	        match = re.match('(.*) <([^<>]+)> (\d+) ([-+]\d{4})$', value)
+		if not match or token in info:
+		    raise IOError("Commit %s: parse error in headers" % sha1)
+		name, email, time, timezone = match.groups()
+		info[token] = {'name': name, 'email': email, 'time': time,
+			       'timezone': timezone}
+	    else:
+		raise IOError("Commit %s: parse error in headers" % sha1)
+    check_proc(proc, cmd)
+    return info
+
 def git_abbrev_rev(rev):
     """If rev is a SHA1 hash, return an abbreviated version."""
     if re.match('^[0-9a-f]{40}$', rev):
@@ -762,6 +795,158 @@ def pull_command(args):
     else:
 	print "Branch '%s' updated." % branch
 
+def push_file(apiurl, project, package, name, blob_sha1):
+    cmd = [opt_git, 'cat-file', 'blob', blob_sha1]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    # FIXME: should do this in batches and not in one go ...
+    data = proc.stdout.read()
+    md5 = hashlib.md5(data).hexdigest()
+
+    query = {'rev': 'repository'}
+    url = osc.core.makeurl(apiurl, ['source', project, package, name], query)
+    if opt_verbose:
+	print "-- PUT " + url
+    osc.core.http_PUT(url, data=data)
+    return md5
+
+def push_commit(apiurl, project, package, message, sha1, status, committer):
+    old_files = {}
+    for file in status['files']:
+	name = file['name']
+	md5 = file['md5']
+	old_files[name] = md5
+
+    new_files = git_list_tree(sha1)
+    for file in new_files:
+	name = file['name']
+	mode = file['mode']
+	if mode[0:3] != '100':
+	    raise IOError("Commit %s: '%s' is not a regular file" %
+			  (git_abbrev_rev(sha1), name))
+	if mode[3:] != '644':
+	    print >>stderr, "Warning: commit %s, '%s': cannot preserve file " \
+			    "mode %s; falling back to 644." % \
+			    (git_abbrev_rev(sha1), name, mode[3:])
+	try:
+	    md5 = old_files[name]
+	    sha1 = bscache['blob ' + md5]
+	    if sha1 == file['sha1']:
+	        file['md5'] = md5
+		continue
+        except KeyError:
+	    pass
+	md5 = push_file(apiurl, project, package, name, file['sha1'])
+	file['md5'] = md5
+
+    directory = ET.Element('directory')
+    for file in new_files:
+	name=file['name']
+	md5=file['md5']
+	directory.append(ET.Element('entry', name=name, md5=md5))
+
+    query = {'cmd': 'commitfilelist',
+	     'rev': 'repository',
+	     'user': committer,
+	     'comment': message}
+    url = osc.core.makeurl(apiurl, ['source', project, package], query=query)
+    if opt_verbose:
+	print "-- POST " + url
+    file = osc.core.http_POST(url, data=ET.tostring(directory))
+    root = ET.parse(file).getroot()
+    status = parse_xml_directory(root)
+    return status
+
+def push_command(args):
+    """The push command."""
+    if len(args) <= 1:
+	if len(args) == 0:
+	    branch = 'HEAD'
+	else:
+	    branch = args[0]
+	apiurl, project, package, branch, remote_branch = \
+	    get_rev_info(branch)
+    else:
+	if opt_apiurl:
+	    apiurl = opt_apiurl
+	else:
+	    apiurl = osc.conf.config['apiurl']
+	project, package = args
+	branch = package
+	remote_branch = remote_branch_name(apiurl, project, package)
+
+    remote_sha1 = fetch_package(apiurl, project, package, opt_depth)
+    sha1 = git_get_sha1(branch)
+
+    if remote_sha1 == sha1:
+	raise IOError("Nothing to push on branch '%s'." % branch)
+
+    status = get_package_status(apiurl, project, package)
+    if 'tpackage' in status:
+	raise IOError('This is a link package; pushing is not supported.')
+
+    # Require a clean index: otherwise, we would lose local chages when doing
+    # a hard reset below.
+    git('update-index', '--refresh')
+
+    if remote_sha1 != None:
+	try:
+	    merge_base = git('merge-base', remote_branch, sha1)
+	except IOError:
+	    merge_base = None
+	if merge_base != remote_sha1:
+	    raise IOError("Branch '%s' is not a child of the remote branch. "
+			  "Please rebase first." % branch)
+
+    # Login name of the user who will show up as the creator of a commit.
+    committer = osc.conf.get_apiurl_usr(apiurl)
+
+    path = []
+    while sha1 != remote_sha1:
+	info = git_get_commit(sha1)
+	try:
+	    parents = info['parents']
+	except KeyError:
+	    parents = [None]
+	if len(parents) != 1:
+	    raise IOError("Commit %s is a merge. The build service cannot "
+			  "represent merges. Please linearize the history "
+			  "before pushing." % git_abbrev_rev(sha1))
+	email = info['author']['email']
+	login = map_email_to_login(apiurl, email)
+	if login != committer:
+	    print >>stderr, "Warning: commit %s from %s will appear to be " \
+			    "from %s.\n" % (git_abbrev_rev(sha1), login,
+					    committer)
+	message = info['message']
+	path.append([sha1, message])
+	sha1 = parents[0]
+
+    if len(path) == 1:
+	commit_s = "commit"
+    else:
+	commit_s = "commits"
+    print "Pushing %d %s" % (len(path), commit_s)
+    if 'rev' in status:
+	last_rev = status['rev']
+    else:
+	last_rev = '0'
+    for node in reversed(path):
+	sha1, message = node
+	status = push_commit(apiurl, project, package, message, sha1, status,
+			     committer)
+	next_rev = str(int(last_rev) + 1)
+	if status['rev'] != next_rev:
+	    raise IOError("Expected to create revision %s, but ended up with "
+			  "revision %s" % (next_rev, status['rev']))
+
+
+    remote_sha1 = fetch_package(apiurl, project, package)
+    git('reset', '--hard', '-q', remote_sha1)
+    # FIXME: Make sure that branch tracks remote_branch: this will not be
+    #        the case for the initial commit.
+    print "Branch '%s' rebased from %s to %s." \
+	    % (branch, git_abbrev_rev(path[0][0]), git_abbrev_rev(remote_sha1))
+
 def usermap_command(args):
     """The usermap command."""
     if len(args) == 0:
@@ -847,6 +1032,14 @@ Commands are:
 	Do a fetch of the remote branch that the current branch is tracking,
 	followed by a rebase of the current branch.
 
+    push, push <branch>, push <project> <package>
+	Export simple changes back to the build service.  Note that the build
+	service cannot represent things like authorship, subdirectories,
+	symlinks and other non-regular files, file modes, or merges.  Pushing
+	to the build service will REWRITE THE GIT HISTORY to what the build
+	service can represent; ANY ADDITIONAL INFORMATION WILL BE LOST.
+	Source links cannot be pushed, yet.
+
     usermap <login> [<email> ...]
 	Show or define which email addresses map to a build service account.
 	The first address is used for mapping from account name to email
@@ -914,6 +1107,9 @@ def main():
 	    global opt_verbose
 	    opt_verbose = True
 
+    # FIXME: allow to specify the local branch name independent from the
+    #        package name.
+
     command = None
     if len(args) >= 1:
 	if args[0] == 'fetch' and len(args) >= 1 and len(args) <= 3:
@@ -924,6 +1120,10 @@ def main():
 	    need_osc_config = True
 	    need_bscache = True
 	    command = pull_command
+	elif args[0] == 'push' and len(args) >= 1 and len(args) <= 3:
+	    need_osc_config = True
+	    need_bscache = True
+	    command = push_command
 	elif args[0] == 'dump' and len(args) == 1:
 	    need_bscache = True
 	    command = dump_command
