@@ -946,8 +946,6 @@ def main():
 	    print >>stderr, match.groups()[0]
 	exit(1)
     except (KeyboardInterrupt, EnvironmentError), error:
-	if not opt_traceback:
-	    print error
 	exit(1)
 
 if __name__ == "__main__":
