@@ -702,6 +702,7 @@ def fetch_command(args):
 	    apiurl = osc.conf.config['apiurl']
 	project, package = args
 	branch = package
+	remote_branch = remote_branch_name(apiurl, project, package)
 
     # Add any objects added to bscache in the meantime.
     if git_get_sha1(branch):
@@ -712,7 +713,6 @@ def fetch_command(args):
 	print "This package is empty."
 	return
 
-    remote_branch = remote_branch_name(apiurl, project, package)
     sha1 = git_get_sha1(branch)
     if sha1 == None:
 	git('branch', '--track', branch, remote_branch)
@@ -729,11 +729,25 @@ def fetch_command(args):
 
 def pull_command(args):
     """The pull command."""
-    apiurl, project, package, branch, remote_branch = \
-	get_rev_info('HEAD')
+    if len(args) <= 1:
+	if len(args) == 0:
+	    branch = 'HEAD'
+	else:
+	    branch = args[0]
+	apiurl, project, package, branch, remote_branch = \
+	    get_rev_info(branch)
+    else:
+	if opt_apiurl:
+	    apiurl = opt_apiurl
+	else:
+	    apiurl = osc.conf.config['apiurl']
+	project, package = args
+	branch = package
+	remote_branch = remote_branch_name(apiurl, project, package)
 
     # Add any objects added to bscache in the meantime.
-    bscache.update(branch)
+    if git_get_sha1(branch):
+	bscache.update(branch)
 
     commit_sha1 = fetch_package(apiurl, project, package, opt_depth)
     if commit_sha1 == None:
@@ -829,7 +843,7 @@ Commands are:
 	When a branch point is hit (i.e., a revision that creates a new link
 	or updates an existing link), the target package is fetched as well.
 
-    pull
+    pull, pull <branch>, pull <project> <package>
 	Do a fetch of the remote branch that the current branch is tracking,
 	followed by a rebase of the current branch.
 
@@ -906,7 +920,7 @@ def main():
 	    need_osc_config = True
 	    need_bscache = True
 	    command = fetch_command
-	elif args[0] == 'pull' and len(args) == 1:
+	elif args[0] == 'pull' and len(args) >= 1 and len(args) <= 3:
 	    need_osc_config = True
 	    need_bscache = True
 	    command = pull_command
