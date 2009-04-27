@@ -115,7 +115,7 @@ def git_list_tree(commit_sha1):
 	mode, type, sha1, name = \
 	    re.match('^(\d{6}) ([^ ]+) ([0-9a-f]{40})\t(.*)', line).groups()
 	if type == 'blob':
-	    files.append({'name': name, 'sha1': sha1})
+	    files.append({'mode': mode, 'name': name, 'sha1': sha1})
 	elif type == 'tree':
 	    raise IOError('Commit %s: subdirectories not supported' %
 			  git_abbrev_rev(commit_sha1))
