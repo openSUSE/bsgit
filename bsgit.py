@@ -254,6 +254,10 @@ def get_new_user_info(apiurl, login):
 def get_package_status(apiurl, project, package, rev='latest'):
     """Retrieve the status of a package (optionally, of a given revision).
 
+    REV can at least be 'latest' for the latest revision, a revision number,
+    or a srcmd5 hash.  srcmd5 hashes can specify a real revision or an
+    "expanded" revision (with patches from links applied).
+
     https://api.opensuse.org/source/PROJECT/PACKAGE
       <directory name="PACKAGE" srcmd5="..." ...>
 	<entry name="..." md5="..." size="..." mtime="..." />
