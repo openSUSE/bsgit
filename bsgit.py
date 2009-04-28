@@ -298,13 +298,22 @@ get_package_status.status = {}
 
 def parse_xml_directory(root):
     status = {}
-    for name in ('rev', 'srcmd5', 'tproject', 'tpackage'):
+    for name in ('rev', 'srcmd5', 'xsrcmd5'):
 	try:
 	    value = root.get(name)
-	    if value:
-		status[name] = value
+	    status[name] = value
 	except AttributeError:
 	    pass
+    node = root.find('linkinfo')
+    if node != None:
+	linkinfo = {}
+	for name in ('project', 'package', 'baserev', 'srcmd5', 'lsrcmd5'):
+	    try:
+		value = node.get(name)
+		linkinfo[name] = value
+	    except AttributeError:
+		pass
+	status['linkinfo'] = linkinfo
     files = []
     for node in root.findall('entry'):
 	file = {}
@@ -495,8 +504,9 @@ def apply_patch_to_index(apiurl, project, package, rev, name):
 def expand_link(apiurl, project, package, revision, trevision):
     """Expand a source link and create a git tree object from the result."""
     status = revision['status']
-    tproject = status['tproject']
-    tpackage = status['tpackage']
+    linkinfo = status['linkinfo']
+    tproject = linkinfo['project']
+    tpackage = linkinfo['package']
     trev = trevision['rev']
 
     rev = status['rev']
@@ -629,10 +639,10 @@ def fetch_revision_rec(apiurl, project, package, revision, depth):
     rev = revision['rev']
     status = get_package_status(apiurl, project, package, rev)
     revision['status'] = status
-    if 'tproject' in status:
-	tproject = status['tproject']
-	tpackage = status['tpackage']
-	trevision = guess_link_target(apiurl, tproject, tpackage, revision)
+    if 'linkinfo' in status:
+	linkinfo = status['linkinfo']
+	trevision = guess_link_target(apiurl, linkinfo['project'],
+				      linkinfo['package'], revision)
 	if not trevision:
 	    print >> stderr, 'Warning: cannot expand revision %s of source ' \
 			     'link %s/%s: no suitable link target found.' % \
@@ -643,7 +653,8 @@ def fetch_revision_rec(apiurl, project, package, revision, depth):
 	revision['target'] = trevision
 	trev = trevision['rev']
 	#status['trev'] = trev
-	fetch_package(apiurl, tproject, tpackage, depth - 1, trev)
+	fetch_package(apiurl, linkinfo['project'], linkinfo['package'],
+		      depth - 1, trev)
 
 	if not parent_links_to_same_target(revision, trevision):
 	    parents.append(trevision)
