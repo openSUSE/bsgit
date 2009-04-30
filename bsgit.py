@@ -646,7 +646,9 @@ def fetch_revision_rec(apiurl, project, package, revision, depth):
     """
     if 'parent' in revision and (depth > 1 or 'need_to_fetch' in revision):
 	parent = revision['parent']
-	fetch_revision_rec(apiurl, project, package, parent, depth - 1)
+	commit_sha1 = fetch_revision_rec(apiurl, project, package, parent,
+					 depth - 1)
+	parent['commit_sha1'] = commit_sha1
 
     try:
 	commit_sha1 = revision['commit_sha1']
@@ -675,6 +677,7 @@ def fetch_revision_rec(apiurl, project, package, revision, depth):
 	fetch_package(apiurl, linkinfo['project'], linkinfo['package'],
 		      depth - 1, trev)
     commit_sha1 = fetch_revision(apiurl, project, package, revision)
+    return commit_sha1
 
 def mark_as_needed_rec(rev, revision):
     """Mark all revisions of to rev as needed."""
@@ -711,8 +714,9 @@ def fetch_package(apiurl, project, package, depth=sys.maxint, need_rev=None):
 	revision = get_revision(apiurl, project, package, rev);
 	if need_rev:
 	    mark_as_needed_rec(need_rev, revision)
-	fetch_revision_rec(apiurl, project, package, revision, depth)
-	commit_sha1 = revision['commit_sha1']
+	commit_sha1 = fetch_revision_rec(apiurl, project, package, revision,
+					 depth)
+	revision['commit_sha1'] = commit_sha1
 
     remote_branch = remote_branch_name(apiurl, project, package)
     sha1 = git_get_sha1(remote_branch)
