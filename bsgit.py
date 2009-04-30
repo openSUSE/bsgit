@@ -572,11 +572,11 @@ def create_tree(files):
     check_proc(proc, cmd)
     return tree_sha1
 
-def create_commit(apiurl, tree_sha1, revision):
+def create_commit(apiurl, tree_sha1, revision, parents):
     """Create a git commit from a tree object and a build service revision."""
     cmd = [opt_git, 'commit-tree', tree_sha1]
-    for parent in revision['parents']:
-	cmd.extend(['-p', parent['commit_sha1']])
+    for commit_sha1 in parents:
+	cmd.extend(['-p', commit_sha1])
 
     name, email = map_login_to_user(apiurl, revision['user'])
     time = revision['time']
@@ -617,7 +617,18 @@ def fetch_revision(apiurl, project, package, revision):
 		fetch_files(apiurl, project, package, rev, files)
 		tree_sha1 = create_tree(files)
 	    bscache['tree ' + srcmd5] = tree_sha1
-	commit_sha1 = create_commit(apiurl, tree_sha1, revision)
+
+	parents = []
+	if 'parent' in revision:
+	    parent = revision['parent']
+	    if 'commit_sha1' in parent:
+		parents.append(parent['commit_sha1'])
+	if 'target' in revision:
+	    trevision = revision['target']
+	    if not parent_links_to_same_target(revision, trevision):
+		parents.append(trevision['commit_sha1'])
+
+	commit_sha1 = create_commit(apiurl, tree_sha1, revision, parents)
 	bscache[revision_key] = commit_sha1
 
 	# Add a sentinel which tells us that the MD5 hashes of the objects
@@ -633,11 +644,9 @@ def fetch_revision_rec(apiurl, project, package, revision, depth):
     """Fetch a revision and its children, up to the defined maximum depth.
     Reconnect to parents further up the tree if they are already known.
     """
-    parents = []
     if 'parent' in revision and (depth > 1 or 'need_to_fetch' in revision):
 	parent = revision['parent']
 	fetch_revision_rec(apiurl, project, package, parent, depth - 1)
-	parents.append(parent)
 
     try:
 	commit_sha1 = revision['commit_sha1']
@@ -665,10 +674,6 @@ def fetch_revision_rec(apiurl, project, package, revision, depth):
 	#status['trev'] = trev
 	fetch_package(apiurl, linkinfo['project'], linkinfo['package'],
 		      depth - 1, trev)
-
-	if not parent_links_to_same_target(revision, trevision):
-	    parents.append(trevision)
-    revision['parents'] = parents
     commit_sha1 = fetch_revision(apiurl, project, package, revision)
 
 def mark_as_needed_rec(rev, revision):
