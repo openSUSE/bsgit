@@ -336,6 +336,9 @@ def get_new_package_status(apiurl, project, package, rev):
 def get_revision(apiurl, project, package, rev=None):
     """Retrieve the history of a package (optionally, until a given revision).
 
+    REV can be a revision number or the srcmd5 hash of an "unexpanded"
+    revision.
+
     https://api.opensuse.org/source/PROJECT/PACKAGE/_history
       <revisionlist>
 	<revision rev="..." vrev="...">
@@ -388,6 +391,13 @@ def get_revisions(apiurl, project, package):
 	head = revision
 	rev = revision['rev']
 	history[rev] = head
+
+	# Index by srcmd5 as well.  (It is possibe that more than one revision
+	# has the same srcmd5.  In that case, map from this srcmd5 to the
+	# first such revision.)
+	srcmd5 = revision['srcmd5']
+	if srcmd5 not in history:
+	    history[srcmd5] = head
 
 	# Figure out if this revision is known already.  If it is, we need
 	# to connect to it when fetching descendants.
