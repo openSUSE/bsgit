@@ -418,7 +418,7 @@ def get_revisions(apiurl, project, package):
 
 #=======================================================================
 
-def guess_link_target(apiurl, tproject, tpackage, revision):
+def guess_link_target(revision, apiurl, project, package):
     """Guess which revision (i.e., srcmd5) the given source link refers to.
 
     This is pretty primitive, and not guaranteed to do the right thing.  The
@@ -428,45 +428,37 @@ def guess_link_target(apiurl, tproject, tpackage, revision):
     # FIXME: Check for rev=... tags and use them if present !!!
     try:
 	time = revision['time']
-	trevision = get_revision(apiurl, tproject, tpackage)
+	trevision = get_revision(apiurl, project, package)
 	while time < trevision['time']:
 	    trevision = trevision['parent']
-	return trevision
+	return trevision['srcmd5']
     except KeyError:
 	return None
 
-def parent_links_to_same_target(revision, trevision):
-    """Check if the parent of the given revision links to the same target
-    revision (in which case the target revision is not a parent of the given
-    revision).
-    """
-    return 'parent' in revision and \
-	   revision['parent']['time'] >= trevision['time']
-
 #-----------------------------------------------------------------------
 
-def fetch_files(apiurl, project, package, rev, files):
-    """Fetch a list of files from the specified project and revision."""
+def fetch_files(apiurl, project, package, srcmd5, files):
+    """Fetch a list of files from the specified package."""
     for file in files:
-	sha1 = fetch_file(apiurl, project, package, rev,
+	sha1 = fetch_file(apiurl, project, package, srcmd5,
 			  file['name'], file['md5'])
 	file['sha1'] = sha1
 
-def fetch_file(apiurl, project, package, rev, name, md5):
+def fetch_file(apiurl, project, package, srcmd5, name, md5):
     """Fetch a file (unless it is already known)."""
     try:
 	sha1 = bscache['blob ' + md5]
     except KeyError:
-	sha1 = fetch_new_file(apiurl, project, package, rev, name, md5)
+	sha1 = fetch_new_file(apiurl, project, package, srcmd5, name, md5)
 	bscache['blob ' + md5] = sha1
     return sha1
 
-def fetch_new_file(apiurl, project, package, rev, name, md5):
+def fetch_new_file(apiurl, project, package, srcmd5, name, md5):
     """Fetch a file.
 
     https://api.opensuse.org/source/PROJECT/PACKAGE/FILE&rev=REV
     """
-    query = 'rev=' + rev
+    query = 'rev=' + srcmd5
     url = osc.core.makeurl(apiurl,
 			   ['source', project, package, name],
 			   query=query)
@@ -490,75 +482,6 @@ def fetch_new_file(apiurl, project, package, rev, name, md5):
     check_proc(proc, cmd)
     return sha1
 
-def apply_patch_to_index(apiurl, project, package, rev, name):
-    """Apply a patch in a source link to the git index."""
-    url = osc.core.makeurl(apiurl, ['source', project, package, name],
-			   query='rev=' + rev)
-    if opt_verbose:
-	print "-- GET " + url
-    file = osc.core.http_GET(url)
-    cmd = [opt_git, 'apply', '-p0', '--cached', '--whitespace=nowarn']
-    proc = subprocess.Popen(cmd, stdin=PIPE)
-    while True:
-	data = file.read(16384)
-	if len(data) == 0:
-	    break
-	proc.stdin.write(data)
-    proc.stdin.close()
-    status = proc.wait()
-    if status != 0:
-	raise IOError('Failed to apply %s/%s/%s (%s); giving up.' % \
-		      (project, package, name, rev))
-    check_proc(proc, cmd)
-
-def expand_link(apiurl, project, package, revision, trevision):
-    """Expand a source link and create a git tree object from the result."""
-    status = revision['status']
-    linkinfo = status['linkinfo']
-    tproject = linkinfo['project']
-    tpackage = linkinfo['package']
-    trev = trevision['rev']
-
-    rev = status['rev']
-    if opt_verbose:
-	print "Expanding %s/%s (%s) against %s/%s (%s)" % \
-	    (project, package, rev, tproject, tpackage, trev)
-
-    query = 'rev=' + rev
-    root = get_xml_root(apiurl, ['source', project, package, '_link'], query)
-
-    old_files = git_list_tree(trevision['commit_sha1'])
-    patches = root.find('patches')
-    if patches:
-	patches_apply = patches.findall('apply')
-	for node in patches.findall('delete'):
-	    name = node.get('name')
-	    old_files = [f for f in old_files if f['name'] != name]
-    else:
-	patches_apply = []
-
-    new_files = [f for f in status['files'] if f['name'] != '_link']
-    for patch in patches_apply:
-	name = patch.get('name')
-	new_files = [f for f in new_files if f['name'] != name]
-    fetch_files(apiurl, project, package, rev, new_files)
-
-    tree_sha1 = create_tree(old_files + new_files)
-
-    if patches_apply:
-	# Make git use a temporary index file.
-	environ['GIT_INDEX_FILE'] = '.osgit'
-
-	git('read-tree', tree_sha1)
-	# FIXME: Is there a way to garbage collect tree_sha1 right away?
-	for patch in patches_apply:
-	    name = patch.get('name')
-	    apply_patch_to_index(apiurl, project, package, rev, name)
-	tree_sha1 = git('write-tree')
-
-	unlink('.osgit')
-    return tree_sha1
-
 def create_tree(files):
     """Create a git tree object from a list of files."""
     # FIXME: Use NUL-terminated format (-z) for newlines in filenames.
@@ -578,12 +501,19 @@ def create_commit(apiurl, tree_sha1, revision, parents):
     for commit_sha1 in parents:
 	cmd.extend(['-p', commit_sha1])
 
-    name, email = map_login_to_user(apiurl, revision['user'])
+    try:
+	user = revision['user']
+    except KeyError:
+	user = 'unknown'
+
+    encoding = getpreferredencoding()
+
+    name, email = map_login_to_user(apiurl, user)
     time = revision['time']
-    environ['GIT_AUTHOR_NAME'] = name
-    environ['GIT_COMMITTER_NAME'] = name
-    environ['GIT_AUTHOR_EMAIL'] = email
-    environ['GIT_COMMITTER_EMAIL'] = email
+    environ['GIT_AUTHOR_NAME'] = name.encode(encoding)
+    environ['GIT_COMMITTER_NAME'] = name.encode(encoding)
+    environ['GIT_AUTHOR_EMAIL'] = email.encode(encoding)
+    environ['GIT_COMMITTER_EMAIL'] = email.encode(encoding)
     environ['GIT_AUTHOR_DATE'] = time
     environ['GIT_COMMITTER_DATE'] = time
     proc = subprocess.Popen(cmd, stdin=PIPE, stdout=PIPE)
@@ -594,28 +524,41 @@ def create_commit(apiurl, tree_sha1, revision, parents):
     check_proc(proc, cmd)
     return commit_sha1
 
-def fetch_revision(apiurl, project, package, revision):
-    """Fetch one revision, including the files in it."""
-    revision_key = get_revision_key(apiurl, project, package, revision['rev'])
+def commit_is_a_parent(base_sha1, sha1):
+    info = git_get_commit(sha1)
+    if 'parents' in info:
+	for parent in info['parents']:
+	    if base_sha1 == parent or commit_is_a_parent(base_sha1, parent):
+		return True
+    return False
+
+def fetch_revision(apiurl, project, package, revision, status):
+    """Fetch one revision, including the files in it.
+    
+    Also used to fetch expanded / merged versions of packages; in this case,
+    revision['rev'] is unset, and revision['srcmd5'] defines which files to
+    fetch.
+    """
+    try:
+	rev_or_srcmd5 = revision['rev']
+    except KeyError:
+	rev_or_srcmd5 = revision['srcmd5']
+    revision_key = get_revision_key(apiurl, project, package, rev_or_srcmd5)
     try:
 	commit_sha1 = bscache[revision_key]
     except KeyError:
-	rev = revision['rev']
-	print "Fetching %s/%s (%s)" % (project, package, rev)
-	srcmd5 = revision['srcmd5']
+	print "Fetching %s/%s (%s)" % (project, package, rev_or_srcmd5)
+	srcmd5 = status['srcmd5']
 	try:
 	    tree_sha1 = bscache['tree ' + srcmd5]
 	except KeyError:
-	    if 'target' in revision:
-		trevision = revision['target']
-		tree_sha1 = expand_link(apiurl, project, package,
-					revision, trevision)
-	    else:
-		files = revision['status']['files']
-		if compute_srcmd5(files) != srcmd5:
-		    raise IOError('MD5 checksum mismatch')
-		fetch_files(apiurl, project, package, rev, files)
-		tree_sha1 = create_tree(files)
+	    files = status['files']
+	    # Note: for links, the srcmd5 hash we get does not match the
+	    # file list, so we cannot verify the srcmd5 here.
+	    #if compute_srcmd5(files) != srcmd5:
+	    #	raise IOError('MD5 checksum mismatch')
+	    fetch_files(apiurl, project, package, srcmd5, files)
+	    tree_sha1 = create_tree(files)
 	    bscache['tree ' + srcmd5] = tree_sha1
 
 	parents = []
@@ -623,21 +566,58 @@ def fetch_revision(apiurl, project, package, revision):
 	    parent = revision['parent']
 	    if 'commit_sha1' in parent:
 		parents.append(parent['commit_sha1'])
-	if 'target' in revision:
-	    trevision = revision['target']
-	    if not parent_links_to_same_target(revision, trevision):
-		parents.append(trevision['commit_sha1'])
+	if 'base_sha1' in revision:
+	    base_sha1 = revision['base_sha1']
+	    if len(parents) == 0 or \
+	       not commit_is_a_parent(base_sha1, parents[0]):
+		parents.append(base_sha1)
 
 	commit_sha1 = create_commit(apiurl, tree_sha1, revision, parents)
 	bscache[revision_key] = commit_sha1
 
 	# Add a sentinel which tells us that the MD5 hashes of the objects
-	# in this commit are in bscache.
+	# in this commit are in bscache.  This stops bscache.update() from
+	# re-hashing this commit.
 	bscache['commit ' + commit_sha1] = tree_sha1
     revision['commit_sha1'] = commit_sha1
     if opt_verbose:
-	print "Storing %s/%s (%s) as %s" % (project, package, revision['rev'],
+	print "Storing %s/%s (%s) as %s" % (project, package, rev_or_srcmd5,
 					    git_abbrev_rev(commit_sha1))
+    return commit_sha1
+
+def fetch_base_rec(apiurl, project, package, srcmd5, depth):
+    try:
+	revision = get_revision(apiurl, project, package, srcmd5)
+    except KeyError:
+	revision = None
+
+    if revision != None:
+	rev = revision['rev']
+	commit_sha1 = fetch_revision_rec(apiurl, project, package, revision,
+					 depth - 1)
+    else:
+	status = get_package_status(apiurl, project, package, rev=srcmd5)
+	linkinfo = status['linkinfo']
+	lproject = linkinfo['project']
+	lpackage = linkinfo['package']
+	lsrcmd5 = linkinfo['lsrcmd5']
+	parent = get_revision(apiurl, project, package, lsrcmd5)
+	fetch_revision_rec(apiurl, lproject, lpackage, parent, depth - 1)
+	base_sha1 = fetch_base_rec(apiurl, lproject, lpackage,
+				   linkinfo['srcmd5'], depth - 1)
+	revision = {
+	    'srcmd5': srcmd5,
+	    'parent': parent,
+	    'base_sha1': base_sha1,
+	    'time': parent['time'],
+	    }
+	for name in ('user', 'comment', 'time'):
+	    if name in parent:
+		revision[name] = parent[name]
+	commit_sha1 = fetch_revision(apiurl, project, package, revision, status)
+
+    # Make sure we also have the most recent revisions of the link package
+    fetch_package(apiurl, project, package)
     return commit_sha1
 
 def fetch_revision_rec(apiurl, project, package, revision, depth):
@@ -658,25 +638,49 @@ def fetch_revision_rec(apiurl, project, package, revision, depth):
 	pass
 
     rev = revision['rev']
-    status = get_package_status(apiurl, project, package, rev)
-    revision['status'] = status
+    try:
+	status = get_package_status(apiurl, project, package, rev=rev,
+				    linkrev='base', expand='1')
+	expanded = True
+    except HTTPError, error:
+	if error.code == 404:
+	    # Most likely, this is an old revision that does not have the
+	    # baseref attribute.  Query the unexpanded status; we will try
+	    # our best below.
+	    status = get_package_status(apiurl, project, package, rev=rev)
+	    expanded = False
+	else:
+	    raise
+
     if 'linkinfo' in status:
 	linkinfo = status['linkinfo']
-	trevision = guess_link_target(apiurl, linkinfo['project'],
-				      linkinfo['package'], revision)
-	if not trevision:
-	    print >> stderr, 'Warning: cannot expand revision %s of source ' \
-			     'link %s/%s: no suitable link target found.' % \
-		(rev, project, package)
-    else:
-	trevision = None
-    if trevision:
-	revision['target'] = trevision
-	trev = trevision['rev']
-	#status['trev'] = trev
-	fetch_package(apiurl, linkinfo['project'], linkinfo['package'],
-		      depth - 1, trev)
-    commit_sha1 = fetch_revision(apiurl, project, package, revision)
+	lproject = linkinfo['project']
+	lpackage = linkinfo['package']
+	if 'baserev' in linkinfo:
+	    baserev = linkinfo['baserev']
+	else:
+	    baserev = guess_link_target(revision, apiurl, lproject, lpackage)
+	if not expanded and baserev != None:
+	    try:
+		status = get_package_status(apiurl, project, package, rev=rev,
+					    linkrev=baserev, expand='1')
+	    except HTTPError, error:
+	        if error.code == 404:
+		    print >>stderr, "Warning: %s/%s (%s): cannot expand" % \
+				    (project, package, rev)
+		    baserev = None
+		else:
+		    raise
+	if baserev != None:
+	    base_sha1 = fetch_base_rec(apiurl, lproject, lpackage, baserev,
+				       depth - 1)
+	    revision['base_sha1'] = base_sha1
+
+	    if 'baserev' not in linkinfo:
+		print >>stderr, "Warning: %s/%s (%s): link target guessed " \
+				"based on timestamps." % \
+				(project, package, rev)
+    commit_sha1 = fetch_revision(apiurl, project, package, revision, status)
     return commit_sha1
 
 def mark_as_needed_rec(rev, revision):
@@ -695,9 +699,9 @@ def fetch_package(apiurl, project, package, depth=sys.maxint, need_rev=None):
     """Fetch a package, up to the defined maximum depth, but at least including
     the revision with the specified rev.
     """
-    status = get_package_status(apiurl, project, package)
+    revision = get_revision(apiurl, project, package)
     try:
-	rev = status['rev']
+	rev = revision['rev']
     except KeyError:
 	return None
 
@@ -711,7 +715,6 @@ def fetch_package(apiurl, project, package, depth=sys.maxint, need_rev=None):
 	    commit_sha1 = None
 
     if not commit_sha1:
-	revision = get_revision(apiurl, project, package, rev);
 	if need_rev:
 	    mark_as_needed_rec(need_rev, revision)
 	commit_sha1 = fetch_revision_rec(apiurl, project, package, revision,
@@ -752,6 +755,12 @@ def update_branch(branch, commit_sha1):
     file.write(commit_sha1 + '\n')
     return branch
 
+def check_link_uptodate(apiurl, project, package):
+    """Check if a link is based on the most recent version of its target
+    package, and tell the user to perform a merge if not.
+    """
+    pass
+
 def fetch_command(args):
     """The fetch command."""
     git('rev-parse', '--is-inside-work-tree')
@@ -779,6 +788,8 @@ def fetch_command(args):
     if commit_sha1 == None:
 	print "This package is empty."
 	return
+
+    check_link_uptodate(apiurl, project, package)
 
     sha1 = git_get_sha1(branch)
     if sha1 == None:
