@@ -243,17 +243,14 @@ def get_new_user_info(apiurl, login):
     root = get_xml_root(apiurl, ['person', login])
     info = {}
     for name in ('email', 'realname'):
-	try:
-	    value = root.find(name).text
-	    if value:
-		info[name] = value
-	except AttributeError:
-	    pass
+	value = root.find(name)
+	if value != None and value.text != None:
+	    info[name] = value.text
     return info
 
 #-----------------------------------------------------------------------
 
-def get_package_status(apiurl, project, package, rev='latest'):
+def get_package_status(apiurl, project, package, **what):
     """Retrieve the status of a package (optionally, of a given revision).
 
     REV can at least be 'latest' for the latest revision, a revision number,
@@ -284,16 +281,23 @@ def get_package_status(apiurl, project, package, rev='latest'):
     #   to ignore this attribute.
 
     server = re.sub('.*://', '', apiurl)
-    if rev != 'latest':
-	key = server + '/' + project + '/' + package + '/' + rev
+    if what:
+	key = server + '/' + project + '/' + package
+	for name in sorted(what.keys()):
+	    key += '/' + name + '=' + what[name]
 	try:
 	    return get_package_status.status[key]
 	except KeyError:
 	    pass
-    status = get_new_package_status(apiurl, project, package, rev)
+    else:
+	what = {'rev': 'latest'}
+    status = get_new_package_status(apiurl, project, package, what)
     if 'rev' in status:
-	rev = status['rev']
-	key = server + '/' + project + '/' + package + '/' + rev
+	if 'rev' not in what or what['rev'] == 'latest':
+	    what['rev'] = status['rev']
+	key = server + '/' + project + '/' + package
+	for name in sorted(what.keys()):
+	    key += '/' + name + '=' + what[name]
 	get_package_status.status[key] = status
     return status
 get_package_status.status = {}
@@ -301,20 +305,16 @@ get_package_status.status = {}
 def parse_xml_directory(root):
     status = {}
     for name in ('rev', 'srcmd5', 'xsrcmd5'):
-	try:
-	    value = root.get(name)
+	value = root.get(name)
+	if value != None:
 	    status[name] = value
-	except AttributeError:
-	    pass
     node = root.find('linkinfo')
     if node != None:
 	linkinfo = {}
 	for name in ('project', 'package', 'baserev', 'srcmd5', 'lsrcmd5'):
-	    try:
-		value = node.get(name)
+	    value = node.get(name)
+	    if value != None:
 		linkinfo[name] = value
-	    except AttributeError:
-		pass
 	status['linkinfo'] = linkinfo
     files = []
     for node in root.findall('entry'):
@@ -325,11 +325,8 @@ def parse_xml_directory(root):
     status['files'] = files
     return status
 
-def get_new_package_status(apiurl, project, package, rev):
-    query = None
-    if rev != None:
-	query = 'rev=' + rev
-    root = get_xml_root(apiurl, ['source', project, package], query)
+def get_new_package_status(apiurl, project, package, what):
+    root = get_xml_root(apiurl, ['source', project, package], what)
     status = parse_xml_directory(root)
     return status
 
@@ -364,7 +361,10 @@ def get_revision(apiurl, project, package, rev=None):
     except KeyError:
 	history = get_revisions(apiurl, project, package)
 	get_revision.history[key] = history
-    return history[rev]
+    try:
+	return history[rev]
+    except KeyError:
+	return None
 get_revision.history = {}
 
 def get_revision_key(apiurl, project, package, rev):
@@ -382,11 +382,9 @@ def get_revisions(apiurl, project, package):
 	revision = {}
 	revision['rev'] = node.get('rev')
 	for name in ('srcmd5', 'time', 'user', 'comment'):
-	    try:
-		value = node.find(name).text
-	        revision[name] = value
-	    except AttributeError:
-		pass
+	    value = node.find(name)
+	    if value != None and value.text != None:
+		revision[name] = value.text
 
 	if head:
 	    revision['parent'] = head
