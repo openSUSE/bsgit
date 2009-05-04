@@ -30,6 +30,7 @@ from os import (environ, mkdir, chdir, makedirs, unlink)
 from os.path import (dirname, basename)
 from errno import ENOENT
 from urllib2 import HTTPError
+from locale import getpreferredencoding
 import osc.conf
 import osc.core
 try:
@@ -177,17 +178,20 @@ def map_login_to_user(apiurl, login):
 	name = 'unknown'
 	email = 'UNKNOWN'
     else:
+	login_utf8 = login.encode('UTF-8')
 	try:
-	    email = bscache['email ' + login]
-	    name = bscache['realname ' + login]
+	    email = bscache['email ' + login_utf8].decode('UTF-8')
+	    name = bscache['realname ' + login_utf8].decode('UTF-8')
 	except KeyError:
 	    user_info = get_user_info(apiurl, login)
 	    email = user_info['email']
-	    bscache['email ' + login] = email
-	    bscache['login ' + email] = login
+	    email_utf8 = email.encode('UTF-8')
+	    bscache['email ' + login_utf8] = email_utf8
+	    bscache['login ' + email_utf8] = login_utf8
 	    try:
 		name = user_info['realname']
-		bscache['realname' + login] = name
+		name_utf8 = name.encode('UTF-8')
+		bscache['realname ' + login_utf8] = name_utf8
 	    except KeyError:
 		name = login
     return name, email
@@ -216,8 +220,6 @@ def get_user_info(apiurl, login):
     Returns:
     {'email': ..., 'realname': ...}
     """
-    if login == 'unknown':
-	return {}
     try:
 	return get_user_info.info[login]
     except KeyError:
@@ -993,11 +995,12 @@ def usermap_command(args):
 	return
 
     login = args[0]
+    login_utf8 = login.encode('UTF-8')
     if len(args) == 1:
 	try:
-	    email = bscache['email ' + login]
+	    email = bscache['email ' + login_utf8].decode('UTF-8')
 	    try:
-		realname = bscache['realname ' + login]
+		realname = bscache['realname ' + login_utf8].decode('UTF-8')
 	    except KeyError:
 		realname = None
 		pass
@@ -1006,7 +1009,7 @@ def usermap_command(args):
 	aliases = []
 	for key in bscache.keys():
 	    if key[0:6] == 'login ' and key[6:] != email and \
-	       bscache[key] == login:
+	       bscache[key] == login_utf8:
 		aliases.append(key[6:])
 	if email == None:
 	    if len(aliases) == 0:
@@ -1033,14 +1036,16 @@ def usermap_command(args):
 			email = match.groups()[0]
 		    else:
 			raise IOError("Cannot parse '%s'" % email)
+	    email_utf8 = email.encode('UTF-8')
 	    if first_email:
-		bscache['email ' + login] = email
+		bscache['email ' + login_utf8] = email_utf8
 		if realname:
-		    bscache['realname ' + login] = realname
-		elif bscache.has_key('realname ' + login):
-		    del bscache['realname ' + login]
+		    realname_utf8 = realname.encode('UTF-8')
+		    bscache['realname ' + login_utf8] = realname_utf8
+		elif bscache.has_key('realname ' + login_utf8):
+		    del bscache['realname ' + login_utf8]
 		first_email = False
-	    bscache['login ' + email] = login
+	    bscache['login ' + email_utf8] = login_utf8
 
 def dump_command(args):
     """The dump command."""
