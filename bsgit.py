@@ -421,9 +421,9 @@ def get_revisions(apiurl, project, package):
 def guess_link_target(revision, apiurl, project, package):
     """Guess which revision (i.e., srcmd5) the given source link refers to.
 
-    This is pretty primitive, and not guaranteed to do the right thing.  The
-    problem here is that the build service does not record which revision of
-    a package a link was generated against.
+    The build service now records which revision a link was generated against
+    and reports this as linkinfo basrev=<rev>.  We still need to guess what
+    links created before that are based on, and we cannot always get it right.
     """
     # FIXME: Check for rev=... tags and use them if present !!!
     try:
@@ -534,7 +534,7 @@ def commit_is_a_parent(base_sha1, sha1):
 
 def fetch_revision(apiurl, project, package, revision, status):
     """Fetch one revision, including the files in it.
-    
+
     Also used to fetch expanded / merged versions of packages; in this case,
     revision['rev'] is unset, and revision['srcmd5'] defines which files to
     fetch.
@@ -586,6 +586,17 @@ def fetch_revision(apiurl, project, package, revision, status):
     return commit_sha1
 
 def fetch_base_rec(apiurl, project, package, srcmd5, depth):
+    """Fetch the version of a package that a link is based on. (The project
+    and package referred to here is the target package.)
+
+    The base version of a simple link will be a proper revision of the target
+    package.  The base version of a link of a link (or more deeply nested)
+    will be the "expanded" version of the package, i.e., a kind of merge:
+    the revisions of links are stored as patches; the "expanded" version is
+    that patch applied to the most recent revision of the parent package for
+    ordinary packages, or to the most recent "expanded" version of the parent
+    link.
+    """
     try:
 	revision = get_revision(apiurl, project, package, srcmd5)
     except KeyError:
@@ -684,7 +695,7 @@ def fetch_revision_rec(apiurl, project, package, revision, depth):
     return commit_sha1
 
 def mark_as_needed_rec(rev, revision):
-    """Mark all revisions of to rev as needed."""
+    """Mark all revisions up the rev as needed."""
     # FIXME: If we end up further back in the history than any known revisions,
     # we need to refetch all the revisions.  (Unset all the 'commit-sha1's in
     # that case!)
@@ -888,6 +899,13 @@ def push_commit(apiurl, project, package, message, sha1, status, committer):
 	name=file['name']
 	md5=file['md5']
 	directory.append(ET.Element('entry', name=name, md5=md5))
+
+    # Note: when implementing support for pushing links, use linkrev=<rev> to
+    # specify which revision the revision being created is based on.
+
+    # FIXME: the backend should allow clients to specify which revision they
+    # are trying to update so that uploads will be atomic, and concurrent
+    # updates will not clash.
 
     query = {'cmd': 'commitfilelist',
 	     'rev': 'repository',
