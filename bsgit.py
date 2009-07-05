@@ -613,6 +613,7 @@ def fetch_base_rec(apiurl, project, package, srcmd5, depth):
 	lpackage = linkinfo['package']
 	lsrcmd5 = linkinfo['lsrcmd5']
 	parent = get_revision(apiurl, project, package, lsrcmd5)
+	# FIXME: check if this commit is already a parent !!!
 	fetch_revision_rec(apiurl, lproject, lpackage, parent, depth - 1)
 	base_sha1 = fetch_base_rec(apiurl, lproject, lpackage,
 				   linkinfo['srcmd5'], depth - 1)
@@ -621,8 +622,9 @@ def fetch_base_rec(apiurl, project, package, srcmd5, depth):
 	    'parent': parent,
 	    'base_sha1': base_sha1,
 	    'time': parent['time'],
+	    'comment': 'Expanded %s(%s)' % (lpackage, parent['rev']),
 	    }
-	for name in ('user', 'comment', 'time'):
+	for name in ('user', 'time'):
 	    if name in parent:
 		revision[name] = parent[name]
 	commit_sha1 = fetch_revision(apiurl, project, package, revision, status)
