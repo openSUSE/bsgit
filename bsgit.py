@@ -674,6 +674,9 @@ def fetch_revision_rec(apiurl, project, package, revision, depth):
 	else:
 	    baserev = guess_link_target(revision, apiurl, lproject, lpackage)
 	if not expanded and baserev != None:
+	    # This revisision hasn't been expanded against linkrev='base' (probably
+	    # because it doesn't have a baseref tag), and we have guessed a baseref
+	    # now.
 	    try:
 		status = get_package_status(apiurl, project, package, rev=rev,
 					    linkrev=baserev, expand='1')
