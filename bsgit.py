@@ -250,6 +250,14 @@ def get_new_user_info(apiurl, login):
 
 #-----------------------------------------------------------------------
 
+def query_url(what):
+    sep = '?'
+    query = ''
+    for name in sorted(what.keys()):
+	query = sep + name + '=' + what[name]
+	sep = '&'
+    return query
+
 def get_package_status(apiurl, project, package, **what):
     """Retrieve the status of a package (optionally, of a given revision).
 
@@ -282,9 +290,7 @@ def get_package_status(apiurl, project, package, **what):
 
     server = re.sub('.*://', '', apiurl)
     if what:
-	key = server + '/' + project + '/' + package
-	for name in sorted(what.keys()):
-	    key += '/' + name + '=' + what[name]
+	key = server + '/source/' + project + '/' + package + query_url(what)
 	try:
 	    return get_package_status.status[key]
 	except KeyError:
@@ -295,9 +301,7 @@ def get_package_status(apiurl, project, package, **what):
     if 'rev' in status:
 	if 'rev' not in what or what['rev'] == 'latest':
 	    what['rev'] = status['rev']
-	key = server + '/' + project + '/' + package
-	for name in sorted(what.keys()):
-	    key += '/' + name + '=' + what[name]
+	key = server + '/source/' + project + '/' + package + query_url(what)
 	get_package_status.status[key] = status
     return status
 get_package_status.status = {}
