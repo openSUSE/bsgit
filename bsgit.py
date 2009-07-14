@@ -430,12 +430,13 @@ def guess_link_target(revision, apiurl, project, package):
     links created before that are based on, and we cannot always get it right.
     """
     # FIXME: Check for rev=... tags and use them if present !!!
+    # FIXME: See Bug 516795 - <linkinfo baserev> not set in revision 1 of new link
     try:
 	time = revision['time']
 	trevision = get_revision(apiurl, project, package)
 	while time < trevision['time']:
 	    trevision = trevision['parent']
-	return trevision['srcmd5']
+	return (trevision['rev'], trevision['srcmd5'])
     except KeyError:
 	return None
 
@@ -676,7 +677,8 @@ def fetch_revision_rec(apiurl, project, package, revision, depth):
 	if 'baserev' in linkinfo:
 	    basesrcmd5 = linkinfo['baserev']
 	else:
-	    basesrcmd5 = guess_link_target(revision, apiurl, lproject, lpackage)
+	    (baserev, basesrcmd5) = guess_link_target(revision, apiurl, lproject,
+						      lpackage)
 	if not expanded and basesrcmd5 != None:
 	    # This revisision hasn't been expanded against linkrev='base' (probably
 	    # because it doesn't have a baseref tag), and we have guessed a baseref
@@ -697,9 +699,9 @@ def fetch_revision_rec(apiurl, project, package, revision, depth):
 	    revision['base_sha1'] = base_sha1
 
 	    if 'baserev' not in linkinfo:
-		print >>stderr, "Warning: %s/%s (%s): link target guessed " \
-				"based on timestamps." % \
-				(project, package, rev)
+		print >>stderr, "Warning: %s/%s (%s): link target guessed as " \
+				"%s(%s) based on timestamps." % \
+				(project, package, rev, lpackage, baserev)
     commit_sha1 = fetch_revision(apiurl, project, package, revision, status)
     return commit_sha1
 
