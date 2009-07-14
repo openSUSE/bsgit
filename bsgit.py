@@ -674,25 +674,25 @@ def fetch_revision_rec(apiurl, project, package, revision, depth):
 	lproject = linkinfo['project']
 	lpackage = linkinfo['package']
 	if 'baserev' in linkinfo:
-	    baserev = linkinfo['baserev']
+	    basesrcmd5 = linkinfo['baserev']
 	else:
-	    baserev = guess_link_target(revision, apiurl, lproject, lpackage)
-	if not expanded and baserev != None:
+	    basesrcmd5 = guess_link_target(revision, apiurl, lproject, lpackage)
+	if not expanded and basesrcmd5 != None:
 	    # This revisision hasn't been expanded against linkrev='base' (probably
 	    # because it doesn't have a baseref tag), and we have guessed a baseref
 	    # now.
 	    try:
 		status = get_package_status(apiurl, project, package, rev=rev,
-					    linkrev=baserev, expand='1')
+					    linkrev=basesrcmd5, expand='1')
 	    except HTTPError, error:
 	        if error.code == 404:
 		    print >>stderr, "Warning: %s/%s (%s): cannot expand" % \
 				    (project, package, rev)
-		    baserev = None
+		    basesrcmd5 = None
 		else:
 		    raise
-	if baserev != None:
-	    base_sha1 = fetch_base_rec(apiurl, lproject, lpackage, baserev,
+	if basesrcmd5 != None:
+	    base_sha1 = fetch_base_rec(apiurl, lproject, lpackage, basesrcmd5,
 				       depth - 1)
 	    revision['base_sha1'] = base_sha1
 
