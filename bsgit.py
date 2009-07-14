@@ -590,6 +590,27 @@ def fetch_revision(apiurl, project, package, revision, status):
 					    git_abbrev_rev(commit_sha1))
     return commit_sha1
 
+def refers_to_parents_only(apiurl, project, package, srcmd5, child_sha1):
+    revision = get_revision(apiurl, project, package, srcmd5)
+    if revision != None and 'commit_sha1' in revision:
+	return commit_is_a_parent(revision['commit_sha1'], child_sha1)
+
+    status = get_package_status(apiurl, project, package, rev=srcmd5)
+    if 'linkinfo' in status:
+	linkinfo = status['linkinfo']
+	if 'lsrcmd5' in linkinfo and not refers_to_parents_only(apiurl,
+		project, package, linkinfo['lsrcmd5'], child_sha1):
+	    return False
+	lproject = linkinfo['project']
+	lpackage = linkinfo['package']
+	if 'srcmd5' in linkinfo and not refers_to_parents_only(apiurl,
+		lproject, lpackage, linkinfo['srcmd5'], child_sha1):
+	    return False
+	elif 'baserev' in linkinfo and not refers_to_parents_only(apiurl,
+		lproject, lpackage, linkinfo['baserev'], child_sha1):
+	    return False
+    return True
+
 def fetch_base_rec(apiurl, project, package, srcmd5, depth):
     """Fetch the version of a package that a link is based on. (The project
     and package referred to here is the target package.)
@@ -618,7 +639,6 @@ def fetch_base_rec(apiurl, project, package, srcmd5, depth):
 	lpackage = linkinfo['package']
 	lsrcmd5 = linkinfo['lsrcmd5']
 	parent = get_revision(apiurl, project, package, lsrcmd5)
-	# FIXME: check if this commit is already a parent !!!
 	fetch_revision_rec(apiurl, lproject, lpackage, parent, depth - 1)
 	base_sha1 = fetch_base_rec(apiurl, lproject, lpackage,
 				   linkinfo['srcmd5'], depth - 1)
@@ -694,9 +714,17 @@ def fetch_revision_rec(apiurl, project, package, revision, depth):
 		else:
 		    raise
 	if basesrcmd5 != None:
-	    base_sha1 = fetch_base_rec(apiurl, lproject, lpackage, basesrcmd5,
-				       depth - 1)
-	    revision['base_sha1'] = base_sha1
+	    try:
+		parent = revision['parent']
+	    except KeyError:
+		parent = None
+
+	    if parent == None or 'commit_sha1' not in parent or \
+	       not refers_to_parents_only(apiurl, lproject, lpackage,  basesrcmd5,
+					  parent['commit_sha1']):
+		base_sha1 = fetch_base_rec(apiurl, lproject, lpackage, basesrcmd5,
+					   depth - 1)
+		revision['base_sha1'] = base_sha1
 
 	    if 'baserev' not in linkinfo:
 		print >>stderr, "Warning: %s/%s (%s): link target guessed as " \
