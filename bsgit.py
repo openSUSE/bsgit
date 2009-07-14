@@ -627,7 +627,7 @@ def fetch_base_rec(apiurl, project, package, srcmd5, depth):
 	    'parent': parent,
 	    'base_sha1': base_sha1,
 	    'time': parent['time'],
-	    'comment': 'Expanded %s(%s)' % (lpackage, parent['rev']),
+	    'comment': 'Expanded %s(%s)' % (package, parent['rev']),
 	    }
 	for name in ('user', 'time'):
 	    if name in parent:
