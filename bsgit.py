@@ -886,7 +886,7 @@ def pull_command(args):
 	return
 
     sha1 = git_get_sha1(branch)
-    git('rebase', remote_branch)
+    git('rebase', remote_branch, branch)
     new_sha1 = git_get_sha1(branch)
     if sha1 == new_sha1:
 	print "Already up-to-date."
