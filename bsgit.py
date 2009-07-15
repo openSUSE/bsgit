@@ -315,7 +315,7 @@ def parse_xml_directory(root):
     node = root.find('linkinfo')
     if node != None:
 	linkinfo = {}
-	for name in ('project', 'package', 'baserev', 'srcmd5', 'lsrcmd5'):
+	for name in ('project', 'package', 'baserev', 'srcmd5', 'lsrcmd5', 'rev'):
 	    value = node.get(name)
 	    if value != None:
 		linkinfo[name] = value
@@ -422,23 +422,34 @@ def get_revisions(apiurl, project, package):
 
 #=======================================================================
 
-def guess_link_target(revision, apiurl, project, package):
+def guess_link_target(apiurl, project, package, rev, linkinfo, time):
     """Guess which revision (i.e., srcmd5) the given source link refers to.
 
     The build service now records which revision a link was generated against
     and reports this as linkinfo basrev=<rev>.  We still need to guess what
     links created before that are based on, and we cannot always get it right.
     """
-    # FIXME: Check for rev=... tags and use them if present !!!
     # FIXME: See Bug 516795 - <linkinfo baserev> not set in revision 1 of new link
-    try:
-	time = revision['time']
-	trevision = get_revision(apiurl, project, package)
-	while time < trevision['time']:
-	    trevision = trevision['parent']
-	return (trevision['rev'], trevision['srcmd5'])
-    except KeyError:
-	return None
+    # FIXME: Check if we have a link of links => what to do then?
+    if 'baserev' in linkinfo:
+	return linkinfo['baserev']
+    else:
+	lproject = linkinfo['project']
+	lpackage = linkinfo['package']
+	if 'rev' in linkinfo:
+	    trevision = get_revision(apiurl, lproject, lpackage, rev=linkinfo['rev'])
+	    return trevision['srcmd5']
+	else:
+	    try:
+		trevision = get_revision(apiurl, lproject, lpackage)
+		while time < trevision['time']:
+		    trevision = trevision['parent']
+		print >>stderr, "Warning: %s/%s (%s): link target guessed as " \
+				"%s(%s) based on timestamps." % \
+				(project, package, rev, lpackage, trevision['srcmd5'])
+		return trevision['srcmd5']
+	    except KeyError:
+		return None
 
 #-----------------------------------------------------------------------
 
@@ -694,42 +705,34 @@ def fetch_revision_rec(apiurl, project, package, revision, depth):
 	linkinfo = status['linkinfo']
 	lproject = linkinfo['project']
 	lpackage = linkinfo['package']
-	if 'baserev' in linkinfo:
-	    basesrcmd5 = linkinfo['baserev']
-	else:
-	    (baserev, basesrcmd5) = guess_link_target(revision, apiurl, lproject,
-						      lpackage)
-	if not expanded and basesrcmd5 != None:
+	baserev = guess_link_target(apiurl, project, package, rev, linkinfo,
+				    revision['time'])
+	if not expanded and baserev != None:
 	    # This revisision hasn't been expanded against linkrev='base' (probably
 	    # because it doesn't have a baseref tag), and we have guessed a baseref
 	    # now.
 	    try:
 		status = get_package_status(apiurl, project, package, rev=rev,
-					    linkrev=basesrcmd5, expand='1')
+					    linkrev=baserev, expand='1')
 	    except HTTPError, error:
 	        if error.code == 404:
 		    print >>stderr, "Warning: %s/%s (%s): cannot expand" % \
 				    (project, package, rev)
-		    basesrcmd5 = None
+		    baserev = None
 		else:
 		    raise
-	if basesrcmd5 != None:
+	if baserev != None:
 	    try:
 		parent = revision['parent']
 	    except KeyError:
 		parent = None
 
 	    if parent == None or 'commit_sha1' not in parent or \
-	       not refers_to_parents_only(apiurl, lproject, lpackage,  basesrcmd5,
+	       not refers_to_parents_only(apiurl, lproject, lpackage,  baserev,
 					  parent['commit_sha1']):
-		base_sha1 = fetch_base_rec(apiurl, lproject, lpackage, basesrcmd5,
+		base_sha1 = fetch_base_rec(apiurl, lproject, lpackage, baserev,
 					   depth - 1)
 		revision['base_sha1'] = base_sha1
-
-	    if 'baserev' not in linkinfo:
-		print >>stderr, "Warning: %s/%s (%s): link target guessed as " \
-				"%s(%s) based on timestamps." % \
-				(project, package, rev, lpackage, baserev)
     commit_sha1 = fetch_revision(apiurl, project, package, revision, status)
     return commit_sha1
 
