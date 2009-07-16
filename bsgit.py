@@ -778,7 +778,7 @@ def fetch_package(apiurl, project, package, depth=sys.maxint, need_rev=None):
     sha1 = git_get_sha1(remote_branch)
     if commit_sha1 != sha1:
 	update_branch(remote_branch, commit_sha1)
-
+    check_link_uptodate(apiurl, project, package, depth)
     return commit_sha1
 
 def remote_branch_name(apiurl, project, package):
@@ -808,11 +808,41 @@ def update_branch(branch, commit_sha1):
     file.write(commit_sha1 + '\n')
     return branch
 
-def check_link_uptodate(apiurl, project, package):
+def check_link_uptodate(apiurl, project, package, depth):
     """Check if a link is based on the most recent version of its target
     package, and tell the user to perform a merge if not.
     """
-    pass
+
+    # Make sure we don't check/report the same package more than once.
+    if project + '/' + package in check_link_uptodate.checked:
+	return
+    check_link_uptodate.checked[project + '/' + package] = True
+
+    status = get_package_status(apiurl, project, package, expand='1')
+    if 'linkinfo' not in status:
+	return
+    linkinfo = status['linkinfo']
+    if 'srcmd5' not in linkinfo:
+	return
+    lsrcmd5 = linkinfo['srcmd5']
+
+    if 'baserev' in linkinfo:
+	baserev = linkinfo['baserev']
+    else:
+	revision = get_revision(apiurl, project, package)
+	baserev = guess_link_target(apiurl, project, package,
+				    revision['rev'], linkinfo,
+				    revision['time'])
+    if lsrcmd5 != baserev:
+	lproject = linkinfo['project']
+	lpackage = linkinfo['package']
+	merge_sha1 = fetch_base_rec(apiurl, lproject, lpackage, lsrcmd5,
+				    depth - 1)
+	print ("Package %s/%s not based on the latest expansion of %s/%s " +
+	       "(commit %s); you may want to merge.") % \
+	      (project, package, lproject, lpackage,
+	       git_abbrev_rev(merge_sha1))
+check_link_uptodate.checked = {}
 
 def fetch_command(args):
     """The fetch command."""
@@ -842,14 +872,12 @@ def fetch_command(args):
 	print "This package is empty."
 	return
 
-    check_link_uptodate(apiurl, project, package)
-
     sha1 = git_get_sha1(branch)
     if sha1 == None:
 	git('branch', '--track', branch, remote_branch)
 	print "Branch '%s' created." % branch
     elif sha1 == commit_sha1:
-	print "Already up-to-date."
+	print "Branch %s already up-to-date." % branch
     else:
 	print "Branch '%s' differs from the remote branch." % branch
     try:
@@ -889,7 +917,7 @@ def pull_command(args):
     git('rebase', remote_branch, branch)
     new_sha1 = git_get_sha1(branch)
     if sha1 == new_sha1:
-	print "Already up-to-date."
+	print "Branch %s already up-to-date." % branch
     else:
 	print "Branch '%s' updated." % branch
 
