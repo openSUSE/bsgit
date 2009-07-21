@@ -808,15 +808,15 @@ def update_branch(branch, commit_sha1):
     file.write(commit_sha1 + '\n')
     return branch
 
-def check_link_uptodate(apiurl, project, package, depth):
+def check_link_uptodate(apiurl, project, package, depth, silent=False):
     """Check if a link is based on the most recent version of its target
     package, and tell the user to perform a merge if not.
     """
 
     # Make sure we don't check/report the same package more than once.
-    if project + '/' + package in check_link_uptodate.checked:
-	return
-    check_link_uptodate.checked[project + '/' + package] = True
+    key = project + '/' + package
+    if key in check_link_uptodate.cached:
+	return check_link_uptodate.cached[key]
 
     status = get_package_status(apiurl, project, package, expand='1')
     if 'linkinfo' not in status:
@@ -833,16 +833,21 @@ def check_link_uptodate(apiurl, project, package, depth):
 	baserev = guess_link_target(apiurl, project, package,
 				    revision['rev'], linkinfo,
 				    revision['time'])
-    if lsrcmd5 != baserev:
+    if lsrcmd5 == baserev:
+	merge_sha1 = None
+    else:
 	lproject = linkinfo['project']
 	lpackage = linkinfo['package']
 	merge_sha1 = fetch_base_rec(apiurl, lproject, lpackage, lsrcmd5,
 				    depth - 1)
-	print ("Package %s/%s not based on the latest expansion of %s/%s " +
-	       "(commit %s); you may want to merge.") % \
-	      (project, package, lproject, lpackage,
-	       git_abbrev_rev(merge_sha1))
-check_link_uptodate.checked = {}
+	if not silent:
+		print ("Package %s/%s not based on the latest expansion of " +
+		       "%s/%s (commit %s); you may want to merge.") % \
+		      (project, package, lproject, lpackage,
+		       git_abbrev_rev(merge_sha1))
+    check_link_uptodate.cached[key] = [lsrcmd5, merge_sha1]
+    return check_link_uptodate.cached[key]
+check_link_uptodate.cached = {}
 
 def fetch_command(args):
     """The fetch command."""
