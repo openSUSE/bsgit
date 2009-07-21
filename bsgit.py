@@ -1197,9 +1197,7 @@ Options are:
 
     -f, --force
 	Recreate all commits even if they appear to be present already.  Files
-	still remain cached: we trust the MD5 algorithm to be free enough of
-	colisions for our purposes.  (Remove .git/bscache to recompute the
-	MD5 checksums.)
+	still remain cached.  (Remove .git/bscache to recompute the MD5 checksums.)
 
     -t, --traceback
 	Print a call trace in case of an error (for debugging).
