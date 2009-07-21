@@ -669,6 +669,46 @@ def fetch_base_rec(apiurl, project, package, srcmd5, depth):
     fetch_package(apiurl, project, package)
     return commit_sha1
 
+def get_base_status(apiurl, project, package, rev):
+    try:
+	status = get_package_status(apiurl, project, package, rev=rev,
+				    linkrev='base', expand='1')
+	expanded = True
+    except HTTPError, error:
+	if error.code == 404:
+	    # Most likely, this is an old revision that does not have the
+	    # baserev attribute.  Query the unexpanded status; we will try
+	    # our best below.
+	    status = get_package_status(apiurl, project, package, rev=rev)
+	    expanded = False
+	else:
+	    raise
+    if 'linkinfo' in status:
+	linkinfo = status['linkinfo']
+	lproject = linkinfo['project']
+	lpackage = linkinfo['package']
+	revision = get_revision(apiurl, project, package, rev)
+	baserev = guess_link_target(apiurl, project, package, rev, linkinfo,
+				    revision['time'])
+	if baserev != None:
+	    if not expanded:
+		# This revisision hasn't been expanded against linkrev='base'
+		# (probably because it doesn't have a baserev tag), and we have
+		# guessed a baserev now.
+		try:
+		    status = get_package_status(apiurl, project, package,
+		    				rev=rev, linkrev=baserev,
+						expand='1')
+		except HTTPError, error:
+		    if error.code == 404:
+			print >>stderr, "Warning: %s/%s (%s): cannot expand" % \
+					(project, package, rev)
+		    else:
+			raise
+	    if 'baserev' not in linkinfo:
+		linkinfo['baserev'] = baserev
+    return status
+
 def fetch_revision_rec(apiurl, project, package, revision, depth):
     """Fetch a revision and its children, up to the defined maximum depth.
     Reconnect to parents further up the tree if they are already known.
@@ -686,42 +726,13 @@ def fetch_revision_rec(apiurl, project, package, revision, depth):
     except KeyError:
 	pass
 
-    rev = revision['rev']
-    try:
-	status = get_package_status(apiurl, project, package, rev=rev,
-				    linkrev='base', expand='1')
-	expanded = True
-    except HTTPError, error:
-	if error.code == 404:
-	    # Most likely, this is an old revision that does not have the
-	    # baseref attribute.  Query the unexpanded status; we will try
-	    # our best below.
-	    status = get_package_status(apiurl, project, package, rev=rev)
-	    expanded = False
-	else:
-	    raise
-
-    if 'linkinfo' in status:
-	linkinfo = status['linkinfo']
-	lproject = linkinfo['project']
-	lpackage = linkinfo['package']
-	baserev = guess_link_target(apiurl, project, package, rev, linkinfo,
-				    revision['time'])
-	if not expanded and baserev != None:
-	    # This revisision hasn't been expanded against linkrev='base' (probably
-	    # because it doesn't have a baseref tag), and we have guessed a baseref
-	    # now.
-	    try:
-		status = get_package_status(apiurl, project, package, rev=rev,
-					    linkrev=baserev, expand='1')
-	    except HTTPError, error:
-	        if error.code == 404:
-		    print >>stderr, "Warning: %s/%s (%s): cannot expand" % \
-				    (project, package, rev)
-		    baserev = None
-		else:
-		    raise
-	if baserev != None:
+    base_status = get_base_status(apiurl, project, package, revision['rev'])
+    if 'linkinfo' in base_status:
+	linkinfo = base_status['linkinfo']
+	if 'baserev' in linkinfo:
+	    lproject = linkinfo['project']
+	    lpackage = linkinfo['package']
+	    baserev = linkinfo['baserev']
 	    try:
 		parent = revision['parent']
 	    except KeyError:
@@ -733,7 +744,8 @@ def fetch_revision_rec(apiurl, project, package, revision, depth):
 		base_sha1 = fetch_base_rec(apiurl, lproject, lpackage, baserev,
 					   depth - 1)
 		revision['base_sha1'] = base_sha1
-    commit_sha1 = fetch_revision(apiurl, project, package, revision, status)
+
+    commit_sha1 = fetch_revision(apiurl, project, package, revision, base_status)
     return commit_sha1
 
 def mark_as_needed_rec(rev, revision):
