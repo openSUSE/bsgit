@@ -1039,8 +1039,8 @@ def push_command(args):
 	try:
 	    parents = info['parents']
 	except KeyError:
-	    parents = [None]
-	if len(parents) != 1:
+	    parents = []
+	if len(parents) > 1:
 	    raise IOError("Commit %s is a merge. The build service cannot "
 			  "represent merges. Please linearize the history "
 			  "before pushing." % git_abbrev_rev(sha1))
@@ -1052,6 +1052,8 @@ def push_command(args):
 					    committer)
 	message = info['message']
 	path.append([sha1, message])
+	if len(parents) == 0:
+	    break
 	sha1 = parents[0]
 
     if len(path) == 1:
@@ -1060,18 +1062,17 @@ def push_command(args):
 	commit_s = "commits"
     print "Pushing %d %s" % (len(path), commit_s)
     if 'rev' in status:
-	last_rev = status['rev']
+	next_rev = str(int(status['rev']) + 1)
     else:
-	last_rev = '0'
+	next_rev = '1'
     for node in reversed(path):
 	sha1, message = node
 	status = push_commit(apiurl, project, package, message, sha1, status,
 			     committer)
-	next_rev = str(int(last_rev) + 1)
 	if status['rev'] != next_rev:
 	    raise IOError("Expected to create revision %s, but ended up with "
 			  "revision %s" % (next_rev, status['rev']))
-
+	next_rev = str(int(next_rev) + 1)
 
     remote_sha1 = fetch_package(apiurl, project, package)
     git('reset', '--hard', '-q', remote_sha1)
