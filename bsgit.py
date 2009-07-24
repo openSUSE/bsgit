@@ -887,7 +887,10 @@ def fetch_command(args):
 	    apiurl = opt_apiurl
 	else:
 	    apiurl = osc.conf.config['apiurl']
-	project, package = args[0].split('/', 1)
+	try:
+	    project, package = branch.split('/', 1)
+	except ValueError:
+	    raise error
 	if package.find('/') != -1:
 	    raise error
 	branch = package
@@ -930,7 +933,10 @@ def pull_command(args):
 	    apiurl = opt_apiurl
 	else:
 	    apiurl = osc.conf.config['apiurl']
-	project, package = args[0].split('/', 1)
+	try:
+	    project, package = branch.split('/', 1)
+	except ValueError:
+	    raise error
 	if package.find('/') != -1:
 	    raise error
 	branch = package
@@ -1039,7 +1045,10 @@ def push_command(args):
 	    apiurl = opt_apiurl
 	else:
 	    apiurl = osc.conf.config['apiurl']
-	project, package = args[0].split('/', 1)
+	try:
+	    project, package = branch.split('/', 1)
+	except ValueError:
+	    raise error
 	if package.find('/') != -1:
 	    raise error
 	branch = package
