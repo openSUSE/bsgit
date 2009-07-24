@@ -873,19 +873,21 @@ check_link_uptodate.cached = {}
 def fetch_command(args):
     """The fetch command."""
     git('rev-parse', '--is-inside-work-tree')
-    if len(args) <= 1:
-	if len(args) == 0:
-	    branch = 'HEAD'
-	else:
-	    branch = args[0]
+    if len(args) == 0:
+	branch = 'HEAD'
+    else:
+	branch = args[0]
+    try:
 	apiurl, project, package, branch, remote_branch = \
 	    get_rev_info(branch)
-    else:
+    except IOError, error:
 	if opt_apiurl:
 	    apiurl = opt_apiurl
 	else:
 	    apiurl = osc.conf.config['apiurl']
-	project, package = args
+	project, package = args[0].split('/', 1)
+	if package.find('/') != -1:
+	    raise error
 	branch = package
 	remote_branch = remote_branch_name(apiurl, project, package)
 
@@ -914,19 +916,21 @@ def fetch_command(args):
 
 def pull_command(args):
     """The pull command."""
-    if len(args) <= 1:
-	if len(args) == 0:
-	    branch = 'HEAD'
-	else:
-	    branch = args[0]
+    if len(args) == 0:
+	branch = 'HEAD'
+    else:
+	branch = args[0]
+    try:
 	apiurl, project, package, branch, remote_branch = \
 	    get_rev_info(branch)
-    else:
+    except IOError, error:
 	if opt_apiurl:
 	    apiurl = opt_apiurl
 	else:
 	    apiurl = osc.conf.config['apiurl']
-	project, package = args
+	project, package = args[0].split('/', 1)
+	if package.find('/') != -1:
+	    raise error
 	branch = package
 	remote_branch = remote_branch_name(apiurl, project, package)
 
@@ -1021,19 +1025,21 @@ def push_commit(apiurl, project, package, message, sha1, old_status, committer,
 
 def push_command(args):
     """The push command."""
-    if len(args) <= 1:
-	if len(args) == 0:
-	    branch = 'HEAD'
-	else:
-	    branch = args[0]
+    if len(args) == 0:
+	branch = 'HEAD'
+    else:
+	branch = args[0]
+    try:
 	apiurl, project, package, branch, remote_branch = \
 	    get_rev_info(branch)
-    else:
+    except IOError, error:
 	if opt_apiurl:
 	    apiurl = opt_apiurl
 	else:
 	    apiurl = osc.conf.config['apiurl']
-	project, package = args
+	project, package = args[0].split('/', 1)
+	if package.find('/') != -1:
+	    raise error
 	branch = package
 	remote_branch = remote_branch_name(apiurl, project, package)
 
@@ -1225,7 +1231,7 @@ def usage(status):
 Import build service packages into git.
 
 Commands are:
-    fetch, fetch <branch>, fetch <project> <package>
+    fetch, fetch <branch>, fetch <project>/<package>
 	Update the remote branch tracking the specified <project> and
 	<package>.  If no project and package is specified, the default
 	is to fetch the remote branch that the current branch tracks
@@ -1234,11 +1240,11 @@ Commands are:
 	When a branch point is hit (i.e., a revision that creates a new link
 	or updates an existing link), the target package is fetched as well.
 
-    pull, pull <branch>, pull <project> <package>
+    pull, pull <branch>, pull <project>/<package>
 	Do a fetch of the remote branch that the current branch is tracking,
 	followed by a rebase of the current branch.
 
-    push, push <branch>, push <project> <package>
+    push, push <branch>, push <project>/<package>
 	Export simple changes back to the build service.  Note that the build
 	service cannot represent things like authorship, subdirectories,
 	symlinks and other non-regular files, file modes, or merges.  Pushing
@@ -1316,15 +1322,15 @@ def main():
 
     command = None
     if len(args) >= 1:
-	if args[0] == 'fetch' and len(args) >= 1 and len(args) <= 3:
+	if args[0] == 'fetch' and len(args) >= 1 and len(args) <= 2:
 	    need_osc_config = True
 	    need_bscache = True
 	    command = fetch_command
-	elif args[0] == 'pull' and len(args) >= 1 and len(args) <= 3:
+	elif args[0] == 'pull' and len(args) >= 1 and len(args) <= 2:
 	    need_osc_config = True
 	    need_bscache = True
 	    command = pull_command
-	elif args[0] == 'push' and len(args) >= 1 and len(args) <= 3:
+	elif args[0] == 'push' and len(args) >= 1 and len(args) <= 2:
 	    need_osc_config = True
 	    need_bscache = True
 	    command = push_command
