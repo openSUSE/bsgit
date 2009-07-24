@@ -204,7 +204,7 @@ def map_email_to_login(apiurl, email):
 	login = bscache['login ' + email]
 	return login
     except KeyError:
-	raise IOError("Cannot map email '%s' to a build service acount name. "
+	raise IOError("Cannot map email '%s' to a build service account name. "
 		      "Please use the usermap command." % email)
 
 def get_user_info(apiurl, login):
