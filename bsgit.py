@@ -371,11 +371,13 @@ def forget_about_latest_revision(apiurl, project, package):
     server = re.sub('.*://', '', apiurl)
     key = server + '/' + project + '/' + package
     if key in get_revision.history:
-	history = get_revision.history[key]
-	if 'latest' in history:
-	   history.pop('latest')
+	get_revision.history.pop(key)
     if key in get_package_status.status:
-	get_package_status.status.pop(key)
+	statuses = get_package_status.status[key]
+	for tuple in statuses.keys():
+	    d = dict(tuple)
+	    if 'rev' in d and d['rev'] == 'latest':
+		statuses.pop(tuple)
 
 def get_revision_key(apiurl, project, package, rev):
     """Return the key under which a given revision is stored in bscache."""
