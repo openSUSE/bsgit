@@ -961,9 +961,14 @@ def push_file(apiurl, project, package, name, blob_sha1):
     osc.core.http_PUT(url, data=data)
     return md5
 
-def push_commit(apiurl, project, package, message, sha1, status, committer):
+def push_commit(apiurl, project, package, message, sha1, old_status, committer,
+		baserev=None):
+    """Push a commit.
+
+    The old status is used to identify files which the server definitely knows about
+    already, and which we don't need to upload."""
     old_files = {}
-    for file in status['files']:
+    for file in old_status['files']:
 	name = file['name']
 	md5 = file['md5']
 	old_files[name] = md5
@@ -996,24 +1001,23 @@ def push_commit(apiurl, project, package, message, sha1, status, committer):
 	md5=file['md5']
 	directory.append(ET.Element('entry', name=name, md5=md5))
 
-    # Note: when implementing support for pushing links, use linkrev=<rev> to
-    # specify which revision the revision being created is based on.
-
-    # FIXME: the backend should allow clients to specify which revision they
-    # are trying to update so that uploads will be atomic, and concurrent
-    # updates will not clash.
-
     query = {'cmd': 'commitfilelist',
 	     'rev': 'repository',
 	     'user': committer,
 	     'comment': message}
+
+    if baserev != None:  # Create a revision that is a source link
+	# FIXME: is this also correct if the parent is not a link?
+	query['linkrev'] = baserev
+	query['keeplink'] = '1'
+
     url = osc.core.makeurl(apiurl, ['source', project, package], query=query)
     if opt_verbose:
 	print "-- POST " + url
     file = osc.core.http_POST(url, data=ET.tostring(directory))
     root = ET.parse(file).getroot()
-    status = parse_xml_directory(root)
-    return status
+    new_status = parse_xml_directory(root)
+    return new_status
 
 def push_command(args):
     """The push command."""
@@ -1033,19 +1037,14 @@ def push_command(args):
 	branch = package
 	remote_branch = remote_branch_name(apiurl, project, package)
 
-    remote_sha1 = fetch_package(apiurl, project, package, opt_depth)
+    remote_sha1 = fetch_package(apiurl, project, package, opt_depth,
+				check_uptodate=False)
     sha1 = git_get_sha1(branch)
 
     if remote_sha1 == sha1:
 	raise IOError("Nothing to push on branch '%s'." % branch)
 
-    status = get_package_status(apiurl, project, package)
-    if 'tpackage' in status:
-	raise IOError('This is a link package; pushing is not supported.')
-
-    # Require a clean index: otherwise, we would lose local chages when doing
-    # a hard reset below.
-    git('update-index', '--refresh')
+    base_status = get_base_status(apiurl, project, package)
 
     if remote_sha1 != None:
 	try:
@@ -1055,6 +1054,10 @@ def push_command(args):
 	if merge_base != remote_sha1:
 	    raise IOError("Branch '%s' is not a child of the remote branch. "
 			  "Please rebase first." % branch)
+
+    # Require a clean index: otherwise, we would lose local chages when doing
+    # a hard reset below.merge-base'
+    git('update-index', '--refresh')
 
     # Login name of the user who will show up as the creator of a commit.
     committer = osc.conf.get_apiurl_usr(apiurl)
@@ -1066,10 +1069,28 @@ def push_command(args):
 	    parents = info['parents']
 	except KeyError:
 	    parents = []
-	if len(parents) > 1:
-	    raise IOError("Commit %s is a merge. The build service cannot "
-			  "represent merges. Please linearize the history "
-			  "before pushing." % git_abbrev_rev(sha1))
+	if len(parents) == 0:
+	    parent = None
+	elif len(parents) == 1:
+	    parent = parents[0]
+	    baserev = None
+	elif len(parents) == 2:
+	    # Assume that this is a merge of an "expanded revision". Try to
+	    # figure out which parent is the linkrev (baserev), and which
+	    # parent is the previous revision of the package.
+	    (baserev, merge_sha1) = check_link_uptodate(apiurl, project, package,
+							opt_depth, silent=True)
+	    if parents[0] == merge_sha1:
+		parent = parents[1]
+	    elif parents[1] == merge_sha1:
+		parent = parents[0]
+	    else:
+		raise IOError("Base commit %s is not a parent of commit %s."
+			      % (merge_sha1, sha1))
+	else:
+	    raise IOError("Commit %s is an n-way merge, cannot push."
+			  % git_abbrev_rev(sha1))
+
 	email = info['author']['email']
 	login = map_email_to_login(apiurl, email)
 	if login != committer:
@@ -1077,30 +1098,52 @@ def push_command(args):
 			    "from %s.\n" % (git_abbrev_rev(sha1), login,
 					    committer)
 	message = info['message']
-	path.append([sha1, message])
-	if len(parents) == 0:
-	    break
-	sha1 = parents[0]
+
+	path.append([sha1, message, baserev])
+	if parent == None:
+	    raise IOError("I am confused about the commit hierarchy")
+	sha1 = parent
+
+    # Put path into "chronological" order
+    path.reverse()
+
+    if 'linkinfo' in base_status:
+	linkinfo = base_status['linkinfo']
+	if 'baserev' in linkinfo:
+	    baserev = linkinfo['baserev']
+	else:
+	    baserev = None
+
+	# Fill in missing baserevs
+	for node in path:
+	    if node[2] == None:
+		node[2] = baserev
+	    else:
+		baserev = node[2]
 
     if len(path) == 1:
 	commit_s = "commit"
     else:
 	commit_s = "commits"
+
     print "Pushing %d %s" % (len(path), commit_s)
-    if 'rev' in status:
-	next_rev = str(int(status['rev']) + 1)
+    revision = get_revision(apiurl, project, package)
+    if 'rev' in revision:
+	next_rev = str(int(revision['rev']) + 1)
     else:
 	next_rev = '1'
-    for node in reversed(path):
-	sha1, message = node
-	status = push_commit(apiurl, project, package, message, sha1, status,
-			     committer)
-	if status['rev'] != next_rev:
+
+    for node in path:
+	sha1, message, baserev = node
+	base_status = push_commit(apiurl, project, package, message, sha1,
+				  base_status, committer, baserev)
+	if base_status['rev'] != next_rev:
 	    raise IOError("Expected to create revision %s, but ended up with "
-			  "revision %s" % (next_rev, status['rev']))
+			  "revision %s" % (next_rev, base_status['rev']))
 	next_rev = str(int(next_rev) + 1)
 
-    remote_sha1 = fetch_package(apiurl, project, package)
+    forget_about_latest_revision(apiurl, project, package)
+    remote_sha1 = fetch_package(apiurl, project, package, opt_depth)
     git('reset', '--hard', '-q', remote_sha1)
     # FIXME: Make sure that branch tracks remote_branch: this will not be
     #        the case for the initial commit.
