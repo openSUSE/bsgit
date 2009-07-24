@@ -250,14 +250,6 @@ def get_new_user_info(apiurl, login):
 
 #-----------------------------------------------------------------------
 
-def query_url(what):
-    sep = '?'
-    query = ''
-    for name in sorted(what.keys()):
-	query = sep + name + '=' + what[name]
-	sep = '&'
-    return query
-
 def get_package_status(apiurl, project, package, **what):
     """Retrieve the status of a package (optionally, of a given revision).
 
@@ -290,9 +282,11 @@ def get_package_status(apiurl, project, package, **what):
 
     server = re.sub('.*://', '', apiurl)
     if what:
-	key = server + '/source/' + project + '/' + package + query_url(what)
+	key = server + '/' + project + '/' + package
 	try:
-	    return get_package_status.status[key]
+	    # (Convert the dict into a tuple -- a tuple is hashable,
+	    #  while a dict is not.)
+	    return get_package_status.status[key][tuple(what.items())]
 	except KeyError:
 	    pass
     else:
@@ -301,8 +295,10 @@ def get_package_status(apiurl, project, package, **what):
     if 'rev' in status:
 	if 'rev' not in what or what['rev'] == 'latest':
 	    what['rev'] = status['rev']
-	key = server + '/source/' + project + '/' + package + query_url(what)
-	get_package_status.status[key] = status
+	key = server + '/' + project + '/' + package
+	if key not in get_package_status.status:
+	    get_package_status.status[key] = {}
+	get_package_status.status[key][tuple(what.items())] = status
     return status
 get_package_status.status = {}
 
@@ -336,7 +332,7 @@ def get_new_package_status(apiurl, project, package, what):
 
 #-----------------------------------------------------------------------
 
-def get_revision(apiurl, project, package, rev=None):
+def get_revision(apiurl, project, package, rev='latest'):
     """Retrieve the history of a package (optionally, until a given revision).
 
     REV can be a revision number or the srcmd5 hash of an "unexpanded"
@@ -370,6 +366,16 @@ def get_revision(apiurl, project, package, rev=None):
     except KeyError:
 	return None
 get_revision.history = {}
+
+def forget_about_latest_revision(apiurl, project, package):
+    server = re.sub('.*://', '', apiurl)
+    key = server + '/' + project + '/' + package
+    if key in get_revision.history:
+	history = get_revision.history[key]
+	if 'latest' in history:
+	   history.pop('latest')
+    if key in get_package_status.status:
+	get_package_status.status.pop(key)
 
 def get_revision_key(apiurl, project, package, rev):
     """Return the key under which a given revision is stored in bscache."""
@@ -417,7 +423,7 @@ def get_revisions(apiurl, project, package):
 	    pass
 
     if head:
-	history[None] = head
+	history['latest'] = head
     return history
 
 #=======================================================================
@@ -669,7 +675,7 @@ def fetch_base_rec(apiurl, project, package, srcmd5, depth):
     fetch_package(apiurl, project, package)
     return commit_sha1
 
-def get_base_status(apiurl, project, package, rev):
+def get_base_status(apiurl, project, package, rev='latest'):
     try:
 	status = get_package_status(apiurl, project, package, rev=rev,
 				    linkrev='base', expand='1')
@@ -697,7 +703,7 @@ def get_base_status(apiurl, project, package, rev):
 		# guessed a baserev now.
 		try:
 		    status = get_package_status(apiurl, project, package,
-		    				rev=rev, linkrev=baserev,
+						rev=rev, linkrev=baserev,
 						expand='1')
 		except HTTPError, error:
 		    if error.code == 404:
@@ -760,7 +766,8 @@ def mark_as_needed_rec(rev, revision):
 	return True
     return False
 
-def fetch_package(apiurl, project, package, depth=sys.maxint, need_rev=None):
+def fetch_package(apiurl, project, package, depth=sys.maxint, need_rev=None,
+		  check_uptodate=True):
     """Fetch a package, up to the defined maximum depth, but at least including
     the revision with the specified rev.
     """
@@ -790,7 +797,8 @@ def fetch_package(apiurl, project, package, depth=sys.maxint, need_rev=None):
     sha1 = git_get_sha1(remote_branch)
     if commit_sha1 != sha1:
 	update_branch(remote_branch, commit_sha1)
-    check_link_uptodate(apiurl, project, package, depth)
+    if check_uptodate:
+	check_link_uptodate(apiurl, project, package, depth)
     return commit_sha1
 
 def remote_branch_name(apiurl, project, package):
@@ -830,7 +838,8 @@ def check_link_uptodate(apiurl, project, package, depth, silent=False):
     if key in check_link_uptodate.cached:
 	return check_link_uptodate.cached[key]
 
-    status = get_package_status(apiurl, project, package, expand='1')
+    status = get_package_status(apiurl, project, package, rev='latest',
+				expand='1')
     if 'linkinfo' not in status:
 	return
     linkinfo = status['linkinfo']
