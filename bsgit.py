@@ -175,8 +175,11 @@ def get_xml_root(apiurl, rel, query=None):
 def map_login_to_user(apiurl, login):
     """Map a build service account name to the user's real name and email."""
     if login == 'unknown':
-	name = 'unknown'
+	name = login
 	email = 'UNKNOWN'
+    elif login == 'buildservice-autocommit':
+	name = login
+	email = 'BUILDSERVICE-AUTOCOMMIT'
     else:
 	login_utf8 = login.encode('UTF-8')
 	try:
@@ -199,7 +202,9 @@ def map_login_to_user(apiurl, login):
 def map_email_to_login(apiurl, email):
     """Map an email address to a build service account name."""
     if email == 'UNKNOWN':
-	return 'unknown';
+	return 'unknown'
+    elif email == 'BUILDSERVICE-AUTOCOMMIT':
+	return 'buildservice-autocommit'
     try:
 	login = bscache['login ' + email]
 	return login
