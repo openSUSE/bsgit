@@ -933,22 +933,8 @@ def pull_command(args):
 	branch = 'HEAD'
     else:
 	branch = args[0]
-    try:
-	apiurl, project, package, branch, remote_branch = \
-	    get_rev_info(branch)
-    except IOError, error:
-	if opt_apiurl:
-	    apiurl = opt_apiurl
-	else:
-	    apiurl = osc.conf.config['apiurl']
-	try:
-	    project, package = branch.split('/', 1)
-	except ValueError:
-	    raise error
-	if package.find('/') != -1:
-	    raise error
-	branch = package
-	remote_branch = remote_branch_name(apiurl, project, package)
+    apiurl, project, package, branch, remote_branch = \
+	get_rev_info(branch)
 
     # Add any objects added to bscache in the meantime.
     if git_get_sha1(branch):
