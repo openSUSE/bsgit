@@ -871,7 +871,7 @@ def check_link_uptodate(apiurl, project, package, depth, silent=False):
 				    depth - 1)
 	if not silent:
 		print ("Package %s/%s not based on the latest expansion of " +
-		       "%s/%s (commit %s); you may want to merge.") % \
+		       "%s/%s you may want to merge with commit %s.") % \
 		      (project, package, lproject, lpackage,
 		       git_abbrev_rev(merge_sha1))
     check_link_uptodate.cached[key] = [lsrcmd5, merge_sha1]
