@@ -781,15 +781,14 @@ def fetch_package(apiurl, project, package, depth=sys.maxint, need_rev=None,
     the revision with the specified rev.
     """
     revision = get_revision(apiurl, project, package)
-    try:
-	rev = revision['rev']
-    except KeyError:
+    if revision == None:
 	return None
 
     if opt_force:
 	commit_sha1 = None
     else:
 	try:
+	    rev = revision['rev']
 	    revision_key = get_revision_key(apiurl, project, package, rev)
 	    commit_sha1 = bscache[revision_key]
 	except KeyError:
@@ -910,6 +909,8 @@ def fetch_command(args):
     commit_sha1 = fetch_package(apiurl, project, package, opt_depth)
     if commit_sha1 == None:
 	print "This package is empty."
+	print ("(Use \"%s push <project>/<package>\" for pushing from HEAD into an " + \
+	       "empty package.)") % basename(sys.argv[0])
 	return
 
     sha1 = git_get_sha1(branch)
@@ -1047,7 +1048,9 @@ def push_command(args):
     try:
 	apiurl, project, package, branch, remote_branch = \
 	    get_rev_info(branch)
+	remote_branch_existed_before = True
     except IOError, error:
+	remote_branch_existed_before = False
 	if opt_apiurl:
 	    apiurl = opt_apiurl
 	else:
@@ -1058,7 +1061,8 @@ def push_command(args):
 	    raise error
 	if package.find('/') != -1:
 	    raise error
-	branch = package
+	branch = git('rev-parse', '--verify', '--symbolic-full-name', 'HEAD')
+	branch = re.sub('^refs/heads/', '', branch)
 	remote_branch = remote_branch_name(apiurl, project, package)
 
     remote_sha1 = fetch_package(apiurl, project, package, opt_depth,
@@ -1093,11 +1097,11 @@ def push_command(args):
 	    parents = info['parents']
 	except KeyError:
 	    parents = []
+	baserev = None
 	if len(parents) == 0:
 	    parent = None
 	elif len(parents) == 1:
 	    parent = parents[0]
-	    baserev = None
 	elif len(parents) == 2:
 	    # Assume that this is a merge of an "expanded revision". Try to
 	    # figure out which parent is the linkrev (baserev), and which
@@ -1125,7 +1129,7 @@ def push_command(args):
 
 	path.append([sha1, message, baserev])
 	if parent == None:
-	    raise IOError("I am confused about the commit hierarchy")
+	    break
 	sha1 = parent
 
     # Put path into "chronological" order
@@ -1152,7 +1156,7 @@ def push_command(args):
 
     print "Pushing %d %s" % (len(path), commit_s)
     revision = get_revision(apiurl, project, package)
-    if 'rev' in revision:
+    if revision != None:
 	next_rev = str(int(revision['rev']) + 1)
     else:
 	next_rev = '1'
@@ -1169,8 +1173,11 @@ def push_command(args):
     forget_about_latest_revision(apiurl, project, package)
     remote_sha1 = fetch_package(apiurl, project, package, opt_depth)
     git('reset', '--hard', '-q', remote_sha1)
-    # FIXME: Make sure that branch tracks remote_branch: this will not be
-    #        the case for the initial commit.
+
+    if not remote_branch_existed_before:
+	git('config', 'branch.' + branch + '.remote', '.')
+	git('config', 'branch.' + branch + '.merge', remote_branch)
+
     print "Branch '%s' rebased from %s to %s." \
 	    % (branch, git_abbrev_rev(path[0][0]), git_abbrev_rev(remote_sha1))
 
@@ -1258,7 +1265,7 @@ Commands are:
 	When a branch point is hit (i.e., a revision that creates a new link
 	or updates an existing link), the target package is fetched as well.
 
-    pull, pull <branch>, pull <project>/<package>
+    pull, pull <branch>
 	Do a fetch of the remote branch that the current branch is tracking,
 	followed by a rebase of the current branch.
 
@@ -1392,7 +1399,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# TODO
-#
-# * Make checkout and pushing to an empty package work
