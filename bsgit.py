@@ -435,7 +435,7 @@ def get_revisions(apiurl, project, package):
 
 #=======================================================================
 
-def guess_link_target(apiurl, project, package, rev, linkinfo, time):
+def guess_link_target(apiurl, project, package, rev, linkinfo, time, silent=False):
     """Guess which revision (i.e., srcmd5) the given source link refers to.
 
     The build service now records which revision a link was generated against
@@ -457,10 +457,11 @@ def guess_link_target(apiurl, project, package, rev, linkinfo, time):
 		trevision = get_revision(apiurl, lproject, lpackage)
 		while time < trevision['time']:
 		    trevision = trevision['parent']
-		# FIXME: this message comes twice currently.
-		print >>stderr, "Warning: %s/%s (%s): link target guessed as " \
-				"%s(%s) based on timestamps." % \
-				(project, package, rev, lpackage, trevision['srcmd5'])
+		if not silent:
+		    print >>stderr, "Warning: %s/%s (%s): link target " \
+				    "guessed as %s(%s) based on timestamps." % \
+				    (project, package, rev, lpackage,
+				     trevision['srcmd5'])
 		return trevision['srcmd5']
 	    except KeyError:
 		return None
@@ -861,7 +862,7 @@ def check_link_uptodate(apiurl, project, package, depth, silent=False):
 	revision = get_revision(apiurl, project, package)
 	baserev = guess_link_target(apiurl, project, package,
 				    revision['rev'], linkinfo,
-				    revision['time'])
+				    revision['time'], silent=True)
     if lsrcmd5 == baserev:
 	merge_sha1 = None
     else:
