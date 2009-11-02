@@ -1,0 +1,7 @@
+Please see doc/announce*.txt for the release announcements of bsgit from its
+inception until its current state.  The project was introduced at the openSUSE
+conference 2009; see doc/git-in-the-build-service.pdf for the slides used.
+
+There also was a Google Summer Of Code project for implementing a git backend
+for the build service which unfortunately failed.  Some documentation for that
+project can be found at http://en.opensuse.org/Build_Service/Git_Backend.
