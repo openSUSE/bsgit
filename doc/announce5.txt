@@ -1,0 +1,97 @@
+From agruen@suse.de Thu Aug 20 11:42:15 2009
+From: Andreas Gruenbacher <agruen@suse.de>
+Organization: SUSE Labs / Novell
+To: opensuse-buildservice@opensuse.org
+Subject: Re: [opensuse-buildservice] Re: Import build service packages into git
+Date: Thu, 20 Aug 2009 11:42:15 +0200
+User-Agent: KMail/1.9.9
+References: <200904160915.01898.agruen@suse.de> <200907280144.50890.agruen@suse.de> <200908201138.40551.agruen@suse.de>
+In-Reply-To: <200908201138.40551.agruen@suse.de>
+X-KMail-Link-Message: 4196669
+X-KMail-Link-Type: reply
+MIME-Version: 1.0
+Content-Type: text/plain;
+  charset="iso-8859-1"
+Content-Transfer-Encoding: 7bit
+Content-Disposition: inline
+Message-Id: <200908201142.15413.agruen@suse.de>
+Status: RO
+X-Status: RSC
+X-KMail-EncryptionState:  
+X-KMail-SignatureState:  
+X-KMail-MDN-Sent:  
+X-Length: 4668
+X-UID: 13043
+
+On Thursday, 20 August 2009 11:38:40 Andreas Gruenbacher wrote:
+> On Tuesday, 28 July 2009 1:44:50 Andreas Gruenbacher wrote:
+> > ARBITRARY MERGES, LOSS OF INFORMATION
+> > =====================================
+> >
+> > The build service backend is not capable of storing some of the
+> > information that git knows about: merges are only possible in the form of
+> > source links as described above, there is no distinction between author
+> > and committer, file modes are not stored, timestamps are computed on the
+> > server, there is no support for non-regular files or subdirectories.
+>
+> Comparing version control in the build service with git, the most
+> significant and painful difference seems to be tracking of parents: all
+> commits in git reference all of their parent commits by sha1 checksum. The
+> build service allows to determine the previous revisions of a package
+> (revisions are numbered from 1 .. n), but it does not keep track of
+> additional parents in all cases: for example, when two development branches
+> are merged, the revisions on each of those two branches would need to be
+> recorded as parents.
+>
+> (Source links do record the revision of the target package that they are
+> based on in the "baserev" attribute, but this information is lost again
+> when merging back into the target package.)
+>
+> This deficiency is causing enough problems in the build service itself: you
+> may have noticed spurious commits in packages with a comment like "auto
+> commit by copy to link target". With proper parent tracking, those commits
+> would be unnecessary.
+>
+>
+> Other differences include:
+>
+>  * The build service uses md5 checksums for identifying objects (files and
+>    revisions), while git uses sha1 checksums. The git frontend works around
+>    this by keeping an on-disk cache which maps from md5 to sha1 checksums;
+>    a git backend on the server would have to do the same in order to
+> emulate the build service API on top of a git repository.
+>
+>  * A package revision in the build service roughly corresponds to a commit
+> in git. Revisions in the build service are are assigned consecutive numbers
+> starting from 1. Commits in git are identified by their sha1 checksum; it
+> is not possible to get from a commit's sha1 checksum to the parent commit
+> without looking at the commit itself. The git frontend keeps a mapping from
+> revision numbers to commit sha1s; a git backend could do the same.
+>
+>  * The build service keeps track of the package version and major release
+>    number ("vref") of each revision. The git frontend does not use this
+>    information; a git backend would have to maintain a mapping from commit
+>    sha1s to (version, vref) tuples.
+>
+>  * (Some more relatively minor ones.)
+
+Workarounds for all those differences could be implemented, and a git backend 
+could emulate the current build service API. This would result in a major 
+engineering effort with a suboptimal result though: git already has a very 
+efficient network protocol which the build service API would not be able to 
+beat. So I wonder if we can't use plain git for version control (i.e., 
+storing and accessing the various versions of packages), and use the build 
+service API for all the remaining things that git doesn't know or care about 
+(like package versions and release numbers).
+
+In this scenario, we would end up with a build service that supports packages 
+backed by either bsdb or by git, and clients would have to support backends. 
+(I'm thinking mostly of osc here at the moment; all the other clients 
+are "nice to have", but not absolutely vital.) The build service API would 
+need to be changed to refer to git commits instead of bsdb revisions for git 
+backed packages. Eventually, we could phase out bsdb and concentrate on git.
+
+What do people think?
+
+Thanks,
+Andreas

@@ -1,0 +1,103 @@
+From agruen@suse.de Thu Apr 16 09:15:01 2009
+From: Andreas Gruenbacher <agruen@suse.de>
+Organization: SUSE Labs / Novell
+To: opensuse-buildservice@opensuse.org
+Subject: Import build service packages into git
+Date: Thu, 16 Apr 2009 09:15:01 +0200
+User-Agent: KMail/1.9.9
+MIME-Version: 1.0
+Content-Disposition: inline
+Status: RO
+X-Status: RSC
+X-Length: 1961
+X-UID: 12637
+Cc: Pavol Rusnak <prusnak@suse.cz>,
+ Peter =?utf-8?q?Libi=C4=8D?= <peter.libic@mff.cuni.cz>,
+ Brandon Philips <brandon@ifup.org>
+Content-Type: text/plain;
+  charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Message-Id: <200904160915.01898.agruen@suse.de>
+X-KMail-EncryptionState: N
+X-KMail-SignatureState: N
+X-KMail-MDN-Sent:  
+
+Hello,
+
+I have been working on an import tool from the build service into git 
+repositories; the result seems to be basically working now. It is available 
+as:
+
+    home:agruen:Factory/bsgit
+
+The git repository is available at:
+
+    http://git.opensuse.org/?p=people/agruen/bsgit.git
+
+Exporting changes into the build service is not supported yet, but it's a 
+start.  Integration into osc also hasn't happened, yet.
+
+The tool tries to be nice to the server and not request the same data over and 
+over again.  Still, when fetching a package, this retrieves all the package's 
+revisions unless you create a shallow copy using bsgit's --depth=N option.  
+So please do not blindly fetch huge packages with a long history just to see 
+what happens.  (What would happen is pretty clear -- I would get into 
+troubles with the build service maintainers!)
+
+Here is how to use bsgit:
+
+	$ mkdir stuff
+	$ cd stuff
+	$ git init
+	$ bsgit fetch home:agruen:Factory bsgit
+	Fetching home:agruen:Factory/bsgit (1)
+	Fetching home:agruen:Factory/bsgit (2)
+	Branch 'bsgit' created.
+	$ git branch -a
+	* bsgit
+	  remotes/api.opensuse.org/home/agruen/Factory/bsgit
+	$ bsgit pull
+	Fetching home:agruen:Factory/bsgit (3)
+	Branch 'bsgit' updated.
+	$ bsgit fetch
+	Already up-to-date.
+
+Observe that bsgit created a remote branch with a long name that encodes the 
+server, project, and package.  This is the state of the package in the build 
+service.  A local branch, 'bsgit', tracks that remote branch.  You may make 
+changes on the local branch.
+
+When you fetch a package, this will leave the local branch alone (except for 
+creating it when it doesn't exist).  A pull does a fetch, followed by a 
+rebase of the local branch.  (It doesn't do a merge because we will not be 
+able to export merges to the build service anyways, at least not with the 
+current backend.)
+
+When bsgit detects a source link, it creates a remote branch for the target 
+package as well (i.e., the package linked to), and it expands the source 
+link.
+
+Source links are expanded against the revision of the target package that they 
+were *created* against.  Very unfortunately, the build service backend does 
+not record the revision it creates a source link against.  Until that is 
+fixed (and I hope soon!), some guessing is involved, and some source links 
+may be expanded against the wrong revision.
+
+Here is a source link example:
+
+	$ bsgit clone home:coolo:branches:home:darix:Factory FastCGI
+	Fetching openSUSE:Factory/FastCGI (1)
+	Fetching openSUSE:Factory/FastCGI (2)
+	Fetching openSUSE:Factory/FastCGI (3)
+	Fetching home:darix:Factory/FastCGI (1)
+	Fetching home:coolo:branches:home:darix:Factory/FastCGI (1)
+	Fetching home:coolo:branches:home:darix:Factory/FastCGI (2)
+	Branch 'FastCGI' created.
+	$ git branch -a
+	* FastCGI
+	  remotes/api.opensuse.org/home/coolo/branches/home/darix/Factory/FastCGI
+	  remotes/api.opensuse.org/home/darix/Factory/FastCGI
+	  remotes/api.opensuse.org/openSUSE/Factory/FastCGI
+
+Cheers,
+Andreas
