@@ -15,12 +15,7 @@ BuildRoot:      %{_tmppath}/%{name}-%{version}-build
 
 %description
 Supports importing of packages from an openSUSE build service instance into
-a git repository, and exporting of simple changes back into the build
-service.
-
-The import capabilities for source links (i.e., linked packages)
-currently is limited due to limitations in the current backend code.
-Exporting source links is not implemented, yet.
+a git repository, and exporting commits back into the build service.
 
 %prep
 %setup
