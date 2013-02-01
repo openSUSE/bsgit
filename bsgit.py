@@ -536,6 +536,8 @@ def create_commit(apiurl, tree_sha1, revision, parents):
 	user = revision['user']
     except KeyError:
 	user = 'unknown'
+    if user == '_service':
+        user = 'unknown'
 
     encoding = getpreferredencoding()
 
