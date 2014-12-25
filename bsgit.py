@@ -811,11 +811,14 @@ def fetch_package(apiurl, project, package, depth=sys.maxint, need_rev=None,
 	check_link_uptodate(apiurl, project, package, depth)
     return commit_sha1
 
+def remote_name(url):
+    return re.sub('^.*://', '', url)
+
 def remote_branch_name(apiurl, project, package):
     """Return the branch name we create for keeping track of the package's
     state in build service."""
     url = osc.core.makeurl(apiurl, [project.replace(':', '/'), package])
-    return 'refs/remotes/' + re.sub('^.*://', '', url)
+    return 'refs/remotes/' + remote_name(url)
 
 def update_branch(branch, commit_sha1):
     """Update a branch to point to the given commit.
@@ -917,6 +920,8 @@ def fetch_command(args):
 
     sha1 = git_get_sha1(branch)
     if sha1 == None:
+	remote = remote_name(apiurl)
+	git('config', 'remote.%s.fetch' % remote, '+refs/heads/*:refs/remotes/%s/*' % remote)
 	git('branch', '--track', branch, remote_branch)
 	print "Branch '%s' created." % branch
     elif sha1 == commit_sha1:
