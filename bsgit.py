@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 """Import packages from the build service into git.
 
@@ -19,6 +19,7 @@
   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 """
 
+import logging
 import sys
 import hashlib
 import re
@@ -28,8 +29,8 @@ from subprocess import PIPE
 from os import environ, mkdir, chdir, makedirs, unlink
 from os.path import dirname, basename
 from errno import ENOENT
-from urllib2 import HTTPError
-from locale import getpreferredencoding
+from urllib.error import HTTPError
+from typing import List
 import osc.conf
 import osc.core
 
@@ -39,10 +40,9 @@ except ImportError:
     import cElementTree as ET
 from bsgit.bscache import BuildServiceCache, compute_srcmd5, check_proc
 
-logging.basicConfig(
-    format="%(levelname)s:%(funcName)s:%(message)s", level=logging.DEBUG
-)
-log = logging.getLogger("bsgit")
+logging.basicConfig(format='%(levelname)s:%(funcName)s:%(message)s',
+                    level=logging.DEBUG)
+log = logging.getLogger('bsgit')
 
 # import pdb  # Python Debugger
 # pdb.set_trace()
@@ -51,8 +51,8 @@ __version__ = "0.8"
 
 # =======================================================================
 
-opt_depth = sys.maxint
-opt_git = "git"
+opt_depth = sys.maxsize
+opt_git = 'git'
 opt_force = False
 opt_verbose = False
 opt_apiurl = None
@@ -64,7 +64,7 @@ bscache = None
 # =======================================================================
 
 
-def git(*args):
+def git(*args: List[str]) -> bytes:
     """Run a simple git command (without little standard input and output)."""
     cmd = [opt_git]
     cmd.extend(args)
@@ -79,7 +79,7 @@ def git(*args):
     return result.rstrip(b"\n")
 
 
-def get_rev_info(rev):
+def get_rev_info(rev: str):
     """Figure out which branches etc. belong to a given revision."""
     try:
         branch = git("rev-parse", "--verify", "--symbolic-full-name", rev)
@@ -195,7 +195,7 @@ def get_xml_root(apiurl, rel, query=None):
     """
     url = osc.core.makeurl(apiurl, rel, query)
     if opt_verbose:
-        print ("-- GET " + url)
+        print("-- GET " + url)
     file = osc.core.http_GET(url)
     return ET.parse(file).getroot()
 
@@ -212,21 +212,21 @@ def map_login_to_user(apiurl, login):
         name = login
         email = "BUILDSERVICE-AUTOCOMMIT"
     else:
-        login_utf8 = login.encode("UTF-8")
+        login_utf8 = login.encode()
         try:
-            email = bscache[b"email " + login_utf8].decode()
-            name = bscache[b"realname " + login_utf8].decode()
+            email = bscache[b'email ' + login_utf8].decode()
+            name = bscache[b'realname ' + login_utf8].decode()
         except KeyError:
-            log.debug("login = %s (%s)", login, type(login))
+            log.debug('login = %s (%s)', login, type(login))
             user_info = get_user_info(apiurl, login)
-            email = user_info["email"]
+            email = user_info['email']
             email_utf8 = email.encode()
-            bscache[b"email " + login_utf8] = email_utf8
-            bscache[b"login " + email_utf8] = login_utf8
+            bscache[b'email ' + login_utf8] = email_utf8
+            bscache[b'login ' + email_utf8] = login_utf8
             try:
-                name = user_info["realname"]
+                name = user_info['realname']
                 name_utf8 = name.encode()
-                bscache[b"realname " + login_utf8] = name_utf8
+                bscache[b'realname ' + login_utf8] = name_utf8
             except KeyError:
                 name = login
     return name, email
@@ -239,7 +239,7 @@ def map_email_to_login(apiurl, email):
     elif email == "BUILDSERVICE-AUTOCOMMIT":
         return "buildservice-autocommit"
     try:
-        login = bscache[b"login " + email]
+        login = bscache[b'login ' + email]
         return login
     except KeyError:
         raise IOError(
@@ -284,8 +284,8 @@ get_user_info.info = {}
 
 
 def get_new_user_info(apiurl, login):
-    log.debug("apiurl = %s", apiurl)
-    root = get_xml_root(apiurl, ["person", login])
+    log.debug('apiurl = %s', apiurl)
+    root = get_xml_root(apiurl, ['person', login])
     info = {}
     for name in ("email", "realname"):
         value = root.find(name)
@@ -586,7 +586,7 @@ def fetch_new_file(apiurl, project, package, srcmd5, name, md5):
     proc.stdin.close()
     sha1 = proc.stdout.read().rstrip(b"\n")
     check_proc(proc, cmd)
-    return sha1
+    return sha1.decode()
 
 
 def create_tree(files):
@@ -620,8 +620,6 @@ def create_commit(apiurl, tree_sha1, revision, parents):
     if user == "_service":
         user = "unknown"
 
-    encoding = getpreferredencoding()
-
     name, email = map_login_to_user(apiurl, user)
     time = revision["time"]
     environ["GIT_AUTHOR_NAME"] = name
@@ -635,7 +633,7 @@ def create_commit(apiurl, tree_sha1, revision, parents):
             proc.stdin.write(revision["comment"].encode())
         commit_sha1 = proc.stdout.read().rstrip(b"\n")
     check_proc(proc, cmd)
-    return commit_sha1
+    return commit_sha1.decode()
 
 
 def commit_is_a_parent(base_sha1, sha1):
@@ -785,7 +783,7 @@ def get_base_status(apiurl, project, package, rev="latest"):
             apiurl, project, package, rev=rev, linkrev="base", expand="1"
         )
         expanded = True
-    except HTTPError, error:
+    except HTTPError as error:
         if error.code == 404:
             # Most likely, this is an old revision that does not have the
             # baserev attribute.  Query the unexpanded status; we will try
@@ -957,7 +955,7 @@ def update_branch(branch, commit_sha1):
     path = git_dir + "/" + branch
     try:
         file = open(path, "w")
-    except IOError, error:
+    except IOError as error:
         if error.errno == ENOENT:
             makedirs(dirname(path))
             file = open(path, "w")
@@ -1076,9 +1074,9 @@ def fetch_command(args):
         git("branch", "--track", branch, remote_branch)
         print ("Branch '%s' created." % branch)
     elif sha1 == commit_sha1:
-        print "Branch %s already up-to-date." % branch
+        print("Branch %s already up-to-date." % branch)
     else:
-        print "Branch '%s' differs from the remote branch." % branch
+        print("Branch '%s' differs from the remote branch." % branch)
     try:
         git("rev-parse", "--verify", "HEAD")
     except IOError:
@@ -1107,9 +1105,9 @@ def pull_command(args):
     git("rebase", remote_branch, branch)
     new_sha1 = git_get_sha1(branch)
     if sha1 == new_sha1:
-        print "Branch %s already up-to-date." % branch
+        print("Branch %s already up-to-date." % branch)
     else:
-        print "Branch '%s' updated." % branch
+        print("Branch '%s' updated." % branch)
 
 
 def push_file(apiurl, project, package, name, blob_sha1):
@@ -1122,7 +1120,7 @@ def push_file(apiurl, project, package, name, blob_sha1):
     query = {"rev": "repository"}
     url = osc.core.makeurl(apiurl, ["source", project, package, name], query)
     if opt_verbose:
-        print "-- PUT " + url
+        print("-- PUT " + url)
     osc.core.http_PUT(url, data=data)
     return md5
 
@@ -1187,7 +1185,7 @@ def push_commit(
 
     url = osc.core.makeurl(apiurl, ["source", project, package], query=query)
     if opt_verbose:
-        print "-- POST " + url
+        print("-- POST " + url)
     file = osc.core.http_POST(url, data=ET.tostring(directory))
     root = ET.parse(file).getroot()
     new_status = parse_xml_directory(root)
@@ -1203,7 +1201,7 @@ def push_command(args):
     try:
         apiurl, project, package, branch, remote_branch = get_rev_info(branch)
         remote_branch_existed_before = True
-    except IOError, error:
+    except IOError as error:
         remote_branch_existed_before = False
         if opt_apiurl:
             apiurl = opt_apiurl
@@ -1319,7 +1317,7 @@ def push_command(args):
     else:
         commit_s = "commits"
 
-    print "Pushing %d %s" % (len(path), commit_s)
+    print("Pushing %d %s" % (len(path), commit_s))
     revision = get_revision(apiurl, project, package)
     if revision is not None:
         next_rev = str(int(revision["rev"]) + 1)
@@ -1430,7 +1428,7 @@ def usermap_command(args):
 def dump_command(args):
     """The dump command."""
     for key in bscache.keys():
-        print "%s %s" % (key, bscache[key])
+        print("%s %s" % (key, bscache[key]))
 
 
 def usage(status):
@@ -1575,7 +1573,7 @@ def main():
                 bscache = BuildServiceCache(git_dir + "/bscache", opt_git)
 
             command(args[1:])
-        except (KeyboardInterrupt, EnvironmentError), error:
+        except (KeyboardInterrupt, EnvironmentError) as error:
             if opt_traceback:
                 import traceback
 
@@ -1591,7 +1589,7 @@ def main():
         if match:
             log.error(match.groups()[0])
         exit(1)
-    except (KeyboardInterrupt, EnvironmentError), error:
+    except (KeyboardInterrupt, EnvironmentError) as error:
         exit(1)
 
 

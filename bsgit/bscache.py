@@ -1,5 +1,3 @@
-#!/usr/bin/python
-
 """On-disk cache for mapping from the build service to git
 
   Copyright (C) 2009  Andreas Gruenbacher <agruen@suse.de>
@@ -19,13 +17,17 @@
   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 """
 
+import logging
+import sys
 import subprocess
 import hashlib
-import bsddb
+import dbm
+import getopt
 import re
 
-# -----------------------------------------------------------------------
+log = logging.getLogger('bscache')
 
+#-----------------------------------------------------------------------
 
 def compute_srcmd5(files):
     """Return the srcmd5 checksum of a ist of files."""
@@ -37,8 +39,11 @@ def compute_srcmd5(files):
 
 def check_proc(proc, cmd):
     """Check the status of a subprocess and raise an exception on failure."""
+    log.debug('cmd = %s (%s)', cmd, type(cmd))
     status = proc.wait()
     if status != 0:
+        if proc.stderr is not None:
+            print('stderr:\n{}'.format(proc.stderr.read()), file=sys.stderr)
         raise subprocess.CalledProcessError(status, cmd)
 
 
@@ -51,7 +56,7 @@ class BuildServiceCache:
     def __init__(self, name, opt_git):
         self.database_name = name
         self.opt_git = opt_git
-        self.hash = bsddb.hashopen(name)
+        self.hash = dbm.open(name, 'c')
 
     def has_key(self, key):
         return key in self.hash
