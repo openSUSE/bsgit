@@ -22,28 +22,26 @@ import sys
 import subprocess
 import hashlib
 import dbm
-import getopt
 import re
 
-log = logging.getLogger('bscache')
+log = logging.getLogger("bscache")
 
-#-----------------------------------------------------------------------
 
 def compute_srcmd5(files):
     """Return the srcmd5 checksum of a ist of files."""
     hasher = hashlib.md5()
-    for file in sorted(files, key=lambda a: a["name"]):
+    for file in sorted(files, key=lambda a: a["name"].lower):
         hasher.update("%s  %s\n" % (file["md5"], file["name"]))
     return hasher.hexdigest()
 
 
 def check_proc(proc, cmd):
     """Check the status of a subprocess and raise an exception on failure."""
-    log.debug('cmd = %s (%s)', cmd, type(cmd))
+    log.debug("cmd = %s (%s)", cmd, type(cmd))
     status = proc.wait()
     if status != 0:
         if proc.stderr is not None:
-            print('stderr:\n{}'.format(proc.stderr.read()), file=sys.stderr)
+            print("stderr:\n{}".format(proc.stderr.read()), file=sys.stderr)
         raise subprocess.CalledProcessError(status, cmd)
 
 
@@ -56,9 +54,9 @@ class BuildServiceCache:
     def __init__(self, name, opt_git):
         self.database_name = name
         self.opt_git = opt_git
-        self.hash = dbm.open(name, 'c')
+        self.hash = dbm.open(name, "c")
 
-    def has_key(self, key):
+    def __contains__(self, key):
         return key in self.hash
 
     def keys(self):
@@ -68,6 +66,8 @@ class BuildServiceCache:
         return self.hash[key]
 
     def __setitem__(self, key, value):
+        assert isinstance(key, bytes)
+        assert isinstance(value, bytes)
         self.hash[key] = value
 
     def __delitem__(self, key):
@@ -164,12 +164,12 @@ class BuildServiceCache:
         # hash the entire repository.
         cmd = [self.opt_git, "rev-parse", obj]
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-        sha1 = proc.stdout.read().rstrip("\n")
+        sha1 = proc.stdout.read().decode().rstrip("\n")
         check_proc(proc, cmd)
 
         cmd = [self.opt_git, "cat-file", "-t", sha1]
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-        type = proc.stdout.read().rstrip("\n")
+        type = proc.stdout.read().rstrip(b"\n")
         check_proc(proc, cmd)
 
         if type == "commit":

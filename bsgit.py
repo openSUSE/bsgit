@@ -26,45 +26,37 @@ import re
 import getopt
 import subprocess
 from subprocess import PIPE
-from os import environ, mkdir, chdir, makedirs, unlink
+from os import environ, makedirs
 from os.path import dirname, basename
 from errno import ENOENT
 from urllib.error import HTTPError
-from typing import List
+from typing import Any, Dict, Optional, Tuple
+from xml.etree import ElementTree as ET
+
 import osc.conf
 import osc.core
 
-try:
-    from xml.etree import cElementTree as ET
-except ImportError:
-    import cElementTree as ET
-from bsgit.bscache import BuildServiceCache, compute_srcmd5, check_proc
+from bsgit.bscache import BuildServiceCache, check_proc
 
-logging.basicConfig(format='%(levelname)s:%(funcName)s:%(message)s',
-                    level=logging.DEBUG)
-log = logging.getLogger('bsgit')
+logging.basicConfig(
+    format="%(levelname)s:%(funcName)s:%(message)s", level=logging.DEBUG
+)
+log = logging.getLogger("bsgit")
 
-# import pdb  # Python Debugger
-# pdb.set_trace()
+__version__ = '0.8.0'
 
-__version__ = "0.8"
-
-# =======================================================================
 
 opt_depth = sys.maxsize
-opt_git = 'git'
+opt_git = "git"
 opt_force = False
 opt_verbose = False
 opt_apiurl = None
 
-# -----------------------------------------------------------------------
 
-bscache = None
-
-# =======================================================================
+bscache: Dict[bytes, bytes] = {}
 
 
-def git(*args: List[str]) -> bytes:
+def git(*args) -> bytes:
     """Run a simple git command (without little standard input and output)."""
     cmd = [opt_git]
     cmd.extend(args)
@@ -79,15 +71,22 @@ def git(*args: List[str]) -> bytes:
     return result.rstrip(b"\n")
 
 
-def get_rev_info(rev: str):
+def get_rev_info(rev: str) -> Optional[Tuple[str, str, str, str, str]]:
     """Figure out which branches etc. belong to a given revision."""
     try:
-        branch = git("rev-parse", "--verify", "--symbolic-full-name", rev)
-        branch = re.sub("^refs/heads/", "", branch)
-        remote_branch = git("config", "--get", "branch.%s.merge" % branch)
-        server, project, package = re.match(
-            "^refs/remotes/([^/]+)/(.*)/(.*)", remote_branch
-        ).groups()
+        branch = git(
+            "rev-parse", "--verify", "--symbolic-full-name", rev
+        ).decode()
+        branch = re.sub(r"^refs/heads/", "", branch)
+        remote_branch = git(
+            "config", "--get", "branch.%s.merge" % branch
+        ).decode()
+        res_match = re.match("^refs/remotes/([^/]+)/(.*)/(.*)", remote_branch)
+        if res_match is None:
+            raise ValueError(
+                "There is no remote branches for {}".format(branch)
+            )
+        server, project, package = res_match.groups()
         project = project.replace("/", ":")
         if opt_apiurl:
             apiurl = opt_apiurl
@@ -97,7 +96,7 @@ def get_rev_info(rev: str):
                     apiurl = url
                     break
         return apiurl, project, package, branch, remote_branch
-    except:
+    except Exception:
         raise IOError("Cannot determine the project and package of " + rev)
 
 
@@ -186,9 +185,6 @@ def git_list_tree(commit_sha1):
     return files
 
 
-# -----------------------------------------------------------------------
-
-
 def get_xml_root(apiurl, rel, query=None):
     """Run a build service query and return the XML root element
     of the result.
@@ -200,46 +196,52 @@ def get_xml_root(apiurl, rel, query=None):
     return ET.parse(file).getroot()
 
 
-# -----------------------------------------------------------------------
-
-
-def map_login_to_user(apiurl, login):
+def map_login_to_user(apiurl: str, login: str) -> Tuple[str, str]:
     """Map a build service account name to the user's real name and email."""
     if login == "unknown":
-        name = login
-        email = "UNKNOWN"
+        name = login.encode()
+        email = b"UNKNOWN"
     elif login == "buildservice-autocommit":
-        name = login
-        email = "BUILDSERVICE-AUTOCOMMIT"
+        name = login.encode()
+        email = b"BUILDSERVICE-AUTOCOMMIT"
     else:
         login_utf8 = login.encode()
         try:
-            email = bscache[b'email ' + login_utf8].decode()
-            name = bscache[b'realname ' + login_utf8].decode()
+            email = bscache[b"email " + login_utf8]
+            name = bscache[b"realname " + login_utf8]
+            log.debug(f"email = {email} ({type(email)})")
+            log.debug(f"name = {name} ({type(name)})")
         except KeyError:
-            log.debug('login = %s (%s)', login, type(login))
+            log.debug("login = %s (%s)", login, type(login))
+            # DEBUG:map_login_to_user:login = unknown (<class 'str'>)
+            # -- GET https://api.opensuse.org/person/unknown
+            # HTTP Error 404: Not Found
+            # Couldn't find User with login = unknown
             user_info = get_user_info(apiurl, login)
-            email = user_info['email']
-            email_utf8 = email.encode()
-            bscache[b'email ' + login_utf8] = email_utf8
-            bscache[b'login ' + email_utf8] = login_utf8
+            email = user_info["email"].encode()
+            bscache[b"email " + login_utf8] = email
+            bscache[b"login " + email] = login_utf8
             try:
-                name = user_info['realname']
-                name_utf8 = name.encode()
-                bscache[b'realname ' + login_utf8] = name_utf8
+                name = user_info["realname"].encode()
+                bscache[b"realname " + login_utf8] = name
             except KeyError:
-                name = login
-    return name, email
+                name = login_utf8
+    log.debug(
+        "name = %s (%s), email = %s (%s)", name, type(name), email, type(email)
+    )
+    name_s = name.decode()
+    email_s = email.decode()
+    return name_s, email_s
 
 
-def map_email_to_login(apiurl, email):
+def map_email_to_login(apiurl: str, email: str) -> bytes:
     """Map an email address to a build service account name."""
     if email == "UNKNOWN":
-        return "unknown"
+        return b"unknown"
     elif email == "BUILDSERVICE-AUTOCOMMIT":
-        return "buildservice-autocommit"
+        return b"buildservice-autocommit"
     try:
-        login = bscache[b'login ' + email]
+        login = bscache[b"login " + email.encode()]
         return login
     except KeyError:
         raise IOError(
@@ -248,7 +250,7 @@ def map_email_to_login(apiurl, email):
         )
 
 
-def get_user_info(apiurl, login):
+def get_user_info(apiurl: str, login: str) -> Dict[str, str]:
     """Retrieve a build service user's details (email and realname).
 
     https://api.opensuse.org/person/LOGIN
@@ -266,35 +268,30 @@ def get_user_info(apiurl, login):
     except KeyError:
         info = get_new_user_info(apiurl, login)
         get_user_info.info[login] = info
+        # FIXME no except: pass!!!
+        email = info["email"].encode()
+        stored_login = None
         try:
-            email = info["email"].encode()
-            stored_login = None
-            try:
-                stored_login = bscache[b"login " + email]
-            except KeyError:
-                pass
-            if login != stored_login:
-                bscache[b"login " + email] = login
+            stored_login = bscache[b"login " + email]
         except KeyError:
-            pass
+            if login != stored_login:
+                bscache[b"login " + email] = login.encode()
+            else:
+                raise
         return info
 
 
 get_user_info.info = {}
 
 
-def get_new_user_info(apiurl, login):
-    log.debug('apiurl = %s', apiurl)
-    root = get_xml_root(apiurl, ['person', login])
+def get_new_user_info(apiurl, login) -> Dict[str, str]:
+    root = get_xml_root(apiurl, ["person", login])
     info = {}
     for name in ("email", "realname"):
         value = root.find(name)
         if value is not None and value.text is not None:
             info[name] = value.text
     return info
-
-
-# -----------------------------------------------------------------------
 
 
 def get_package_status(apiurl, project, package, **what):
@@ -389,10 +386,9 @@ def get_new_package_status(apiurl, project, package, what):
     return status
 
 
-# -----------------------------------------------------------------------
-
-
-def get_revision(apiurl, project, package, rev="latest"):
+def get_revision(
+    apiurl, project, package, rev="latest"
+) -> Optional[Dict[str, Any]]:
     """Retrieve the history of a package (optionally, until a given revision).
 
     REV can be a revision number or the srcmd5 hash of an "unexpanded"
@@ -443,13 +439,14 @@ def forget_about_latest_revision(apiurl, project, package):
                 statuses.pop(tuple)
 
 
-def get_revision_key(apiurl, project, package, rev):
+def get_revision_key(apiurl, project, package, rev) -> bytes:
     """Return the key under which a given revision is stored in bscache."""
     server = re.sub(".*://", "", apiurl)
-    return "revision " + server + "/" + project + "/" + package + "/" + rev
+    out = "revision " + server + "/" + project + "/" + package + "/" + rev
+    return out.encode()
 
 
-def get_revisions(apiurl, project, package):
+def get_revisions(apiurl, project, package) -> Dict[str, Any]:
     root = get_xml_root(apiurl, ["source", project, package, "_history"])
 
     head = None
@@ -494,9 +491,6 @@ def get_revisions(apiurl, project, package):
     return history
 
 
-# =======================================================================
-
-
 def guess_link_target(
     apiurl, project, package, rev, linkinfo, time, silent=False
 ):
@@ -506,7 +500,7 @@ def guess_link_target(
     and reports this as linkinfo basrev=<rev>.  We still need to guess what
     links created before that are based on, and we cannot always get it right.
     """
-    # FIXME: See Bug 516795 - <linkinfo baserev> not set in revision 1 of new link
+    # FIXME: See Bug 516795 - <linkinfo baserev> not set in rev. 1 of new link
     # FIXME: Check if we have a link of links => what to do then?
     if "baserev" in linkinfo:
         return linkinfo["baserev"]
@@ -537,9 +531,6 @@ def guess_link_target(
                 return None
 
 
-# -----------------------------------------------------------------------
-
-
 def fetch_files(apiurl, project, package, srcmd5, files):
     """Fetch a list of files from the specified package."""
     for file in files:
@@ -549,14 +540,16 @@ def fetch_files(apiurl, project, package, srcmd5, files):
         file["sha1"] = sha1
 
 
-def fetch_file(apiurl, project, package, srcmd5, name, md5):
+def fetch_file(apiurl, project, package, srcmd5, name, md5) -> str:
     """Fetch a file (unless it is already known)."""
     try:
         sha1 = bscache[b"blob " + md5.encode()]
     except KeyError:
-        sha1 = fetch_new_file(apiurl, project, package, srcmd5, name, md5)
+        sha1 = fetch_new_file(
+            apiurl, project, package, srcmd5, name, md5
+        ).encode()
         bscache[b"blob " + md5.encode()] = sha1
-    return sha1
+    return sha1.decode()
 
 
 def fetch_new_file(apiurl, project, package, srcmd5, name, md5):
@@ -569,7 +562,7 @@ def fetch_new_file(apiurl, project, package, srcmd5, name, md5):
         apiurl, ["source", project, package, name], query=query
     )
     if opt_verbose:
-        print ("-- GET " + url)
+        print("-- GET " + url)
     file = osc.core.http_GET(url)
     cmd = [opt_git, "hash-object", "-w", "--stdin"]
     proc = subprocess.Popen(cmd, stdin=PIPE, stdout=PIPE)
@@ -580,16 +573,20 @@ def fetch_new_file(apiurl, project, package, srcmd5, name, md5):
             break
         proc.stdin.write(data)
         hasher.update(data)
-    if hasher.hexdigest() != md5:
+    file.close()
+    proc.stdin.close()
+    observed_md5 = hasher.hexdigest()
+    log.debug("observed_md5 = %s (%s)", observed_md5, type(observed_md5))
+    if observed_md5 != md5:
         proc.kill()
         raise IOError("MD5 checksum mismatch")
-    proc.stdin.close()
     sha1 = proc.stdout.read().rstrip(b"\n")
+    log.debug(f"sha1 = {sha1} ({type(sha1)})")
     check_proc(proc, cmd)
     return sha1.decode()
 
 
-def create_tree(files):
+def create_tree(files) -> str:
     """Create a git tree object from a list of files."""
     # FIXME: Use NUL-terminated format (-z) for newlines in filenames.
     cmd = [opt_git, "mktree"]
@@ -597,6 +594,7 @@ def create_tree(files):
         out = b""
         for file in sorted(files, key=lambda a: a["name"].lower()):
             log.debug("file = %s", file)
+            log.debug("file = sha1 %s (%s)", file["sha1"], type(file["sha1"]))
             line = "100644 blob %s\t%s\n" % (file["sha1"], file["name"])
             log.debug("line = %s", line)
             out += line.encode()
@@ -604,7 +602,7 @@ def create_tree(files):
         tree_sha1 = proc_stdout.rstrip(b"\n")
         log.debug("tree_sha1 = %s (%s)", tree_sha1, type(tree_sha1))
         check_proc(proc, cmd)
-    return tree_sha1
+    return tree_sha1.decode()
 
 
 def create_commit(apiurl, tree_sha1, revision, parents):
@@ -628,10 +626,13 @@ def create_commit(apiurl, tree_sha1, revision, parents):
     environ["GIT_COMMITTER_EMAIL"] = email
     environ["GIT_AUTHOR_DATE"] = time
     environ["GIT_COMMITTER_DATE"] = time
+    log.debug(f"cmd = {cmd}")
     with subprocess.Popen(cmd, stdin=PIPE, stdout=PIPE) as proc:
+        in_str = ""
         if "comment" in revision:
-            proc.stdin.write(revision["comment"].encode())
-        commit_sha1 = proc.stdout.read().rstrip(b"\n")
+            in_str = revision["comment"].encode()
+        commit_sha1, _ = proc.communicate(in_str)
+        commit_sha1 = commit_sha1.rstrip(b"\n")
     check_proc(proc, cmd)
     return commit_sha1.decode()
 
@@ -660,10 +661,10 @@ def fetch_revision(apiurl, project, package, revision, status):
     try:
         commit_sha1 = bscache[revision_key]
     except KeyError:
-        print ("Fetching %s/%s (%s)" % (project, package, rev_or_srcmd5))
+        print("Fetching %s/%s (%s)" % (project, package, rev_or_srcmd5))
         srcmd5 = status["srcmd5"].encode()
         try:
-            tree_sha1 = bscache[b"tree " + srcmd5]
+            tree_sha1 = bscache[b"tree " + srcmd5].decode()
         except KeyError:
             files = status["files"]
             # Note: for links, the srcmd5 hash we get does not match the
@@ -672,7 +673,7 @@ def fetch_revision(apiurl, project, package, revision, status):
             #   raise IOError('MD5 checksum mismatch')
             fetch_files(apiurl, project, package, srcmd5, files)
             tree_sha1 = create_tree(files)
-            bscache[b"tree " + srcmd5] = tree_sha1
+            bscache[b"tree " + srcmd5] = tree_sha1.encode()
 
         parents = []
         if "parent" in revision:
@@ -687,15 +688,16 @@ def fetch_revision(apiurl, project, package, revision, status):
                 parents.append(base_sha1)
 
         commit_sha1 = create_commit(apiurl, tree_sha1, revision, parents)
-        bscache[revision_key] = commit_sha1
+        log.debug("commit_sha1 = %s (%s)", commit_sha1, type(commit_sha1))
+        bscache[revision_key] = commit_sha1.encode()
 
         # Add a sentinel which tells us that the MD5 hashes of the objects
         # in this commit are in bscache.  This stops bscache.update() from
         # re-hashing this commit.
-        bscache[b"commit " + commit_sha1] = tree_sha1
+        bscache[b"commit " + commit_sha1.encode()] = tree_sha1.encode()
     revision["commit_sha1"] = commit_sha1
     if opt_verbose:
-        print (
+        print(
             "Storing %s/%s (%s) as %s"
             % (project, package, rev_or_srcmd5, git_abbrev_rev(commit_sha1))
         )
@@ -720,7 +722,7 @@ def refers_to_parents_only(apiurl, project, package, srcmd5, child_sha1):
             apiurl, lproject, lpackage, linkinfo["srcmd5"], child_sha1
         ):
             return False
-        elif "baserev" in linkinfo and not refers_to_parents_only(
+        if "baserev" in linkinfo and not refers_to_parents_only(
             apiurl, lproject, lpackage, linkinfo["baserev"], child_sha1
         ):
             return False
@@ -745,7 +747,6 @@ def fetch_base_rec(apiurl, project, package, srcmd5, depth):
         revision = None
 
     if revision is not None:
-        rev = revision["rev"]
         commit_sha1 = fetch_revision_rec(
             apiurl, project, package, revision, depth - 1
         )
@@ -770,7 +771,9 @@ def fetch_base_rec(apiurl, project, package, srcmd5, depth):
         for name in ("user", "time"):
             if name in parent:
                 revision[name] = parent[name]
-        commit_sha1 = fetch_revision(apiurl, project, package, revision, status)
+        commit_sha1 = fetch_revision(
+            apiurl, project, package, revision, status
+        )
 
     # Make sure we also have the most recent revisions of the link package
     fetch_package(apiurl, project, package)
@@ -794,8 +797,8 @@ def get_base_status(apiurl, project, package, rev="latest"):
             raise
     if "linkinfo" in status:
         linkinfo = status["linkinfo"]
-        lproject = linkinfo["project"]
-        lpackage = linkinfo["package"]
+        # lproject = linkinfo["project"]
+        # lpackage = linkinfo["package"]
         revision = get_revision(apiurl, project, package, rev)
         baserev = guess_link_target(
             apiurl, project, package, rev, linkinfo, revision["time"]
@@ -932,18 +935,18 @@ def fetch_package(
     return commit_sha1
 
 
-def remote_name(url):
+def remote_name(url: str) -> str:
     return re.sub("^.*://", "", url)
 
 
-def remote_branch_name(apiurl, project, package):
+def remote_branch_name(apiurl: str, project: str, package: str) -> str:
     """Return the branch name we create for keeping track of the package's
     state in build service."""
     url = osc.core.makeurl(apiurl, [project.replace(":", "/"), package])
     return "refs/remotes/" + remote_name(url)
 
 
-def update_branch(branch, commit_sha1):
+def update_branch(branch: str, commit_sha1: str) -> str:
     """Update a branch to point to the given commit.
 
     Note: we would usually do this with 'git branch BRANCH COMMIT_SHA1', but
@@ -951,7 +954,7 @@ def update_branch(branch, commit_sha1):
     for the remote branches.
     """
 
-    git_dir = git("rev-parse", "--git-dir")
+    git_dir = git("rev-parse", "--git-dir").decode()
     path = git_dir + "/" + branch
     try:
         file = open(path, "w")
@@ -965,7 +968,9 @@ def update_branch(branch, commit_sha1):
     return branch
 
 
-def check_link_uptodate(apiurl, project, package, depth, silent=False):
+def check_link_uptodate(
+    apiurl: str, project: str, package: str, depth, silent: bool = False
+):
     """Check if a link is based on the most recent version of its target
     package, and tell the user to perform a merge if not.
     """
@@ -989,15 +994,16 @@ def check_link_uptodate(apiurl, project, package, depth, silent=False):
         baserev = linkinfo["baserev"]
     else:
         revision = get_revision(apiurl, project, package)
-        baserev = guess_link_target(
-            apiurl,
-            project,
-            package,
-            revision["rev"],
-            linkinfo,
-            revision["time"],
-            silent=True,
-        )
+        if revision is not None:
+            baserev = guess_link_target(
+                apiurl,
+                project,
+                package,
+                revision["rev"],
+                linkinfo,
+                revision["time"],
+                silent=True,
+            )
     if lsrcmd5 == baserev:
         merge_sha1 = None
     else:
@@ -1007,7 +1013,7 @@ def check_link_uptodate(apiurl, project, package, depth, silent=False):
             apiurl, lproject, lpackage, lsrcmd5, depth - 1
         )
         if not silent:
-            print (
+            print(
                 "Package %s/%s not based on the latest expansion of "
                 + "%s/%s you may want to merge with commit %s."
             ) % (
@@ -1053,11 +1059,11 @@ def fetch_command(args):
 
     commit_sha1 = fetch_package(apiurl, project, package, opt_depth)
     if commit_sha1 is None:
-        print ("This package is empty.")
-        print (
+        print("This package is empty.")
+        print(
             (
-                '(Use "%s push <project>/<package>" for pushing from HEAD into an '
-                + "empty package.)"
+                '(Use "%s push <project>/<package>" for pushing '
+                + "from HEAD into an empty package.)"
             )
             % basename(sys.argv[0])
         )
@@ -1072,7 +1078,7 @@ def fetch_command(args):
             "+refs/heads/*:refs/remotes/%s/*" % remote,
         )
         git("branch", "--track", branch, remote_branch)
-        print ("Branch '%s' created." % branch)
+        print("Branch '%s' created." % branch)
     elif sha1 == commit_sha1:
         print("Branch %s already up-to-date." % branch)
     else:
@@ -1098,7 +1104,7 @@ def pull_command(args):
 
     commit_sha1 = fetch_package(apiurl, project, package, opt_depth)
     if commit_sha1 is None:
-        print "This package is empty."
+        print("This package is empty.")
         return
 
     sha1 = git_get_sha1(branch)
@@ -1126,12 +1132,19 @@ def push_file(apiurl, project, package, name, blob_sha1):
 
 
 def push_commit(
-    apiurl, project, package, message, sha1, old_status, committer, baserev=None
+    apiurl,
+    project,
+    package,
+    message,
+    sha1,
+    old_status,
+    committer,
+    baserev=None,
 ):
     """Push a commit.
 
-    The old status is used to identify files which the server definitely knows about
-    already, and which we don't need to upload."""
+    The old status is used to identify files which the server definitely
+    knows about already, and which we don't need to upload."""
     old_files = {}
     for file in old_status["files"]:
         name = file["name"]
@@ -1351,7 +1364,7 @@ def push_command(args):
         git("config", "branch." + branch + ".remote", ".")
         git("config", "branch." + branch + ".merge", remote_branch)
 
-    print (
+    print(
         "Branch '%s' rebased from %s to %s."
         % (branch, git_abbrev_rev(path[0][0]), git_abbrev_rev(remote_sha1))
     )
@@ -1395,7 +1408,7 @@ def usermap_command(args):
                 email = "?"
         if realname:
             email = '"' + realname + " <" + email + '>"'
-        print (login + " " + email + " " + " ".join(aliases))
+        print(login + " " + email + " " + " ".join(aliases))
     else:
         first_email = True
         for email in args[1:]:
@@ -1432,7 +1445,7 @@ def dump_command(args):
 
 
 def usage(status):
-    print (
+    print(
         """Usage: %s [options] <command> [args])
 
 Import build service packages into git.
@@ -1480,7 +1493,8 @@ Options are:
 
     -f, --force
         Recreate all commits even if they appear to be present already.  Files
-        still remain cached.  (Remove .git/bscache to recompute the MD5 checksums.)
+        still remain cached.
+        (Remove .git/bscache to recompute the MD5 checksums.)
 
     -t, --traceback
         Print a call trace in case of an error (for debugging).
@@ -1513,7 +1527,7 @@ def main():
             ],
         )
     except getopt.GetoptError as err:
-        print (err)
+        print(err)
         usage(2)
     for opt, arg in opts:
         if opt in ("-h", "--help"):
@@ -1585,11 +1599,11 @@ def main():
         if hasattr(error, "osc_msg"):
             log.error(error.osc_msg)
         body = error.read()
-        match = re.search("<summary>(.*)</summary>", body)
+        match = re.search(r"<summary>(.*)</summary>", body.decode())
         if match:
             log.error(match.groups()[0])
         exit(1)
-    except (KeyboardInterrupt, EnvironmentError) as error:
+    except (KeyboardInterrupt, EnvironmentError):
         exit(1)
 
 
