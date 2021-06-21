@@ -1,3 +1,4 @@
 *.pyc
 /bsgit.spec
 /bsgit-*.tar.gz
+/bsgit*.egg-info/*
